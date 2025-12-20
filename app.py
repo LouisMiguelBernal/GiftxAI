@@ -79,8 +79,13 @@ if 'processed_files' not in st.session_state:
 # HELPER FUNCTIONS
 # ------------------------------
 def clean_extracted_text(text: str) -> str:
-    text = re.sub(r'(?<=\w)\s(?=\w)', '', text)
-    text = re.sub(r'\s+', ' ', text)
+    """Clean extracted text while preserving important spacing"""
+    # Replace multiple spaces with single space
+    text = re.sub(r' +', ' ', text)
+    # Replace multiple newlines with double newline
+    text = re.sub(r'\n\s*\n+', '\n\n', text)
+    # Remove leading/trailing whitespace from lines
+    text = '\n'.join(line.strip() for line in text.split('\n'))
     return text.strip()
 
 def extract_text_from_pdf(pdf_file) -> str:
@@ -125,8 +130,13 @@ def clean_response_formatting(text: str) -> str:
     # Remove code blocks (```text```)
     text = re.sub(r'```.*?```', '', text, flags=re.DOTALL)
     
+    # Clean up bullet points and dashes at start of lines
+    text = re.sub(r'^\s*[-•]\s+', '', text, flags=re.MULTILINE)
+    text = re.sub(r'^\s*\d+\.\s+', '', text, flags=re.MULTILINE)
+    
     # Clean up any extra whitespace
-    text = re.sub(r'\n\s*\n', '\n\n', text)
+    text = re.sub(r'\n\s*\n+', '\n\n', text)
+    text = re.sub(r' +', ' ', text)
     
     return text.strip()
 
@@ -174,14 +184,21 @@ Context:
 
 Question: {question}
 
-Provide a clear, direct answer in plain text without any formatting such as bold, italics, headers, or special characters. Use simple paragraphs and natural language."""
+Instructions:
+- Provide a clear, well-structured answer in plain text
+- Write in complete sentences with proper spacing
+- Use natural paragraph breaks for readability
+- Do NOT use any markdown formatting (no bold, italics, headers, bullet points, or numbered lists)
+- Present information in flowing prose format
+- Make sure prices and product names are clearly separated with proper spacing"""
+    
     try:
         response = groq_client.chat.completions.create(
             model="llama-3.3-70b-versatile",
             messages=[
                 {
                     "role": "system",
-                    "content": "You are a helpful assistant specialized in Christmas gift recommendations. Always respond in plain text without using markdown formatting, bold, italics, or special formatting characters. Use clear, simple language in regular paragraphs."
+                    "content": "You are a helpful assistant specialized in Christmas gift recommendations. Always respond in plain text format with proper spacing and readability. Write in flowing prose using complete sentences and paragraphs. Never use markdown formatting, bullet points, numbered lists, or special characters. Ensure prices and product names have proper spacing."
                 },
                 {
                     "role": "user",
@@ -189,7 +206,7 @@ Provide a clear, direct answer in plain text without any formatting such as bold
                 }
             ],
             temperature=0.7,
-            max_tokens=500,
+            max_tokens=800,
             top_p=1,
             stream=False
         )
@@ -259,6 +276,7 @@ user_question = st.chat_input("Ask a question about the Christmas gift documents
 if user_question:
     handle_user_input(user_question)
     st.rerun()
+    
 # ------------------------------
 # FOOTER: Tips (centered, one-time)
 # ------------------------------
