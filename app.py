@@ -5,7 +5,7 @@ import tempfile
 from typing import List
 from pypdf import PdfReader
 from langchain.text_splitter import RecursiveCharacterTextSplitter
-from langchain.vectorstores import InMemoryVectorStore
+from langchain_community.vectorstores import FAISS
 from langchain_community.embeddings import HuggingFaceEmbeddings
 from langchain.schema import Document
 from groq import Groq
@@ -61,7 +61,8 @@ st.markdown("""
 # ------------------------------
 # GROQ API KEY (HIDDEN)
 # ------------------------------
-GROQ_API_KEY = st.secrets["GROQ_API_KEY"]
+GROQ_API_KEY = "YOUR_GROQ_API_KEY_HERE"
+
 if 'groq_client' not in st.session_state or st.session_state.groq_client is None:
     try:
         st.session_state.groq_client = Groq(api_key=GROQ_API_KEY)
@@ -116,37 +117,29 @@ def process_documents(uploaded_files):
             with tempfile.NamedTemporaryFile(delete=False, suffix='.pdf') as tmp_file:
                 tmp_file.write(uploaded_file.getvalue())
                 tmp_path = tmp_file.name
-
             text = extract_text_from_pdf(tmp_path)
             text = clean_extracted_text(text)
             os.unlink(tmp_path)
-
             if not text:
                 st.warning(f"No text extracted from {uploaded_file.name}")
                 continue
             if not is_christmas_related(text):
                 st.warning(f"⚠️ {uploaded_file.name} may not be Christmas-related. Still processing.")
-
             docs = create_document_chunks(text, uploaded_file.name)
             all_docs.extend(docs)
             st.session_state.processed_files.append(uploaded_file.name)
-
     if not all_docs:
         st.error("No valid documents to process")
         return None
-
     with st.spinner("Creating embeddings..."):
         embeddings = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
-
-    # ✅ Use InMemoryVectorStore instead of FAISS
     if st.session_state.vectorstore is None:
-        st.session_state.vectorstore = InMemoryVectorStore.from_documents(all_docs, embeddings)
+        vectorstore = FAISS.from_documents(all_docs, embeddings)
     else:
-        # Add to existing InMemoryVectorStore
         st.session_state.vectorstore.add_documents(all_docs)
-
+        vectorstore = st.session_state.vectorstore
     st.success(f"✅ Processed {len(uploaded_files)} document(s) into {len(all_docs)} chunks")
-    return st.session_state.vectorstore 
+    return vectorstore
 
 def get_relevant_context(question: str, vectorstore, k=3):
     docs = vectorstore.similarity_search(question, k=k)
@@ -250,5 +243,4 @@ if st.session_state.chat_history and 'tips_shown' not in st.session_state:
         </div>
         """,
         unsafe_allow_html=True
-
     )
