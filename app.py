@@ -14,307 +14,260 @@ from groq import Groq
 # APP CONFIGURATION
 # ------------------------------
 st.set_page_config(
-    page_title="GiftxAI - AI Gift Recommendations",
+    page_title="GiftxAI",
     page_icon="🎁",
-    layout="wide",
-    initial_sidebar_state="expanded"
+    layout="wide"
 )
 
 # ------------------------------
-# ADVANCED CUSTOM CSS FOR PROFESSIONAL STYLING
+# DARK MODE CHRISTMAS-THEMED CSS
 # ------------------------------
 st.markdown("""
     <style>
-    /* Import Google Fonts */
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700;800&display=swap');
-    
-    /* Global Styles */
-    * {
-        font-family: 'Inter', sans-serif;
+    /* Dark Mode Christmas Theme */
+    :root {
+        --christmas-red: #E63946;
+        --christmas-green: #2D6A4F;
+        --christmas-gold: #FFB703;
+        --dark-bg: #1E1E1E;
+        --dark-card: #2D2D2D;
+        --dark-text: #E0E0E0;
     }
     
-    /* Hide Streamlit Branding */
-    #MainMenu {visibility: hidden;}
-    footer {visibility: hidden;}
-    header {visibility: hidden;}
-    
-    /* Main Background with Gradient */
+    /* Main Background */
     .stApp {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        background-attachment: fixed;
+        background-color: var(--dark-bg);
+        color: var(--dark-text);
     }
     
-    /* Content Container */
-    .main .block-container {
-        padding: 2rem 3rem;
-        max-width: 1400px;
-        background: rgba(255, 255, 255, 0.95);
-        border-radius: 24px;
-        box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
-        backdrop-filter: blur(10px);
-        margin-top: 2rem;
-    }
-    
-    /* App Title with Animation */
+    /* App Title */
     .app-title {
-        font-size: 56px;
-        font-weight: 800;
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        -webkit-background-clip: text;
-        -webkit-text-fill-color: transparent;
-        background-clip: text;
+        font-size: 48px;
+        font-weight: 700;
+        color: var(--christmas-red);
         text-align: center;
-        margin-bottom: 0.5rem;
-        letter-spacing: -1px;
-        animation: fadeInDown 0.8s ease-out;
+        margin-bottom: 8px;
     }
     
     .app-subtitle {
         text-align: center;
-        color: #6b7280;
+        color: var(--christmas-green);
         font-size: 18px;
-        font-weight: 400;
-        margin-bottom: 2rem;
-        animation: fadeInUp 0.8s ease-out;
-    }
-    
-    @keyframes fadeInDown {
-        from {
-            opacity: 0;
-            transform: translateY(-20px);
-        }
-        to {
-            opacity: 1;
-            transform: translateY(0);
-        }
-    }
-    
-    @keyframes fadeInUp {
-        from {
-            opacity: 0;
-            transform: translateY(20px);
-        }
-        to {
-            opacity: 1;
-            transform: translateY(0);
-        }
-    }
-    
-    /* Sidebar Styling */
-    [data-testid="stSidebar"] {
-        background: linear-gradient(180deg, #667eea 0%, #764ba2 100%);
-        padding: 2rem 1rem;
-    }
-    
-    [data-testid="stSidebar"] h2 {
-        color: white;
-        font-weight: 700;
-        font-size: 22px;
-        margin-bottom: 1.5rem;
-        text-align: center;
-    }
-    
-    [data-testid="stSidebar"] .stMarkdown {
-        color: white;
-    }
-    
-    /* File Uploader */
-    [data-testid="stFileUploader"] {
-        background: rgba(255, 255, 255, 0.1);
-        border: 2px dashed rgba(255, 255, 255, 0.3);
-        border-radius: 12px;
-        padding: 1.5rem;
-        backdrop-filter: blur(10px);
-    }
-    
-    [data-testid="stFileUploader"] label {
-        color: white !important;
         font-weight: 600;
+        margin-bottom: 24px;
+    }
+    
+    /* Headers */
+    h1, h2, h3 {
+        color: var(--christmas-green) !important;
+        font-weight: 600 !important;
+    }
+    
+    /* Sidebar */
+    [data-testid="stSidebar"] {
+        background-color: #252525;
+    }
+    
+    [data-testid="stSidebar"] h2,
+    [data-testid="stSidebar"] h3 {
+        color: var(--christmas-red) !important;
+        font-weight: 600 !important;
+    }
+    
+    [data-testid="stSidebar"] label,
+    [data-testid="stSidebar"] p {
+        color: var(--dark-text) !important;
+        font-weight: 400 !important;
     }
     
     /* Buttons */
-    .stButton > button {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    .stButton > button[kind="primary"] {
+        background-color: var(--christmas-red);
         color: white;
         font-weight: 600;
-        height: 50px;
-        width: 100%;
-        border-radius: 12px;
+        height: 48px;
+        border-radius: 8px;
         border: none;
-        font-size: 16px;
-        transition: all 0.3s ease;
-        box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
+        transition: all 0.2s;
+    }
+    
+    .stButton > button[kind="primary"]:hover {
+        background-color: #D62839;
+        box-shadow: 0 4px 8px rgba(230, 57, 70, 0.4);
+    }
+    
+    .stButton > button {
+        background-color: var(--dark-card);
+        color: var(--christmas-green);
+        font-weight: 600;
+        height: 45px;
+        border-radius: 8px;
+        border: 2px solid var(--christmas-green);
+        transition: all 0.2s;
     }
     
     .stButton > button:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 6px 20px rgba(102, 126, 234, 0.6);
-    }
-    
-    [data-testid="stSidebar"] .stButton > button {
-        background: white;
-        color: #667eea;
-        font-weight: 700;
-    }
-    
-    [data-testid="stSidebar"] .stButton > button:hover {
-        background: #f3f4f6;
-        transform: translateY(-2px);
+        background-color: var(--christmas-green);
+        color: white;
     }
     
     /* Chat Messages */
     .stChatMessage {
-        background: white;
-        border-radius: 16px;
-        padding: 1.5rem;
-        margin-bottom: 1rem;
-        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
-        animation: fadeIn 0.5s ease-out;
-    }
-    
-    @keyframes fadeIn {
-        from {
-            opacity: 0;
-            transform: scale(0.95);
-        }
-        to {
-            opacity: 1;
-            transform: scale(1);
-        }
-    }
-    
-    [data-testid="stChatMessageContent"] {
-        font-size: 16px;
-        line-height: 1.7;
-        color: #1f2937;
-    }
-    
-    /* User Message */
-    [data-testid="stChatMessage"][data-testid*="user"] {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-    }
-    
-    [data-testid="stChatMessage"][data-testid*="user"] p {
-        color: white !important;
-    }
-    
-    /* Assistant Message */
-    [data-testid="stChatMessage"][data-testid*="assistant"] {
-        background: #f9fafb;
-        border-left: 4px solid #667eea;
-    }
-    
-    /* Chat Input */
-    .stChatInput {
         border-radius: 12px;
-        border: 2px solid #e5e7eb;
-        transition: all 0.3s ease;
+        padding: 1.2rem;
+        margin-bottom: 1rem;
     }
     
-    .stChatInput:focus-within {
-        border-color: #667eea;
-        box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+    /* User Messages */
+    [data-testid="stChatMessage"][data-testid*="user"] {
+        background-color: var(--christmas-red);
+    }
+    
+    [data-testid="stChatMessage"][data-testid*="user"] p,
+    [data-testid="stChatMessage"][data-testid*="user"] span,
+    [data-testid="stChatMessage"][data-testid*="user"] div {
+        color: white !important;
+        font-weight: 400 !important;
+        font-style: normal !important;
+    }
+    
+    /* Assistant Messages - FORCE UNIFORM TEXT */
+    [data-testid="stChatMessage"][data-testid*="assistant"] {
+        background-color: var(--dark-card);
+        border-left: 4px solid var(--christmas-green);
+    }
+    
+    [data-testid="stChatMessage"][data-testid*="assistant"] p,
+    [data-testid="stChatMessage"][data-testid*="assistant"] span,
+    [data-testid="stChatMessage"][data-testid*="assistant"] div,
+    [data-testid="stChatMessage"][data-testid*="assistant"] li,
+    [data-testid="stChatMessage"][data-testid*="assistant"] ul,
+    [data-testid="stChatMessage"][data-testid*="assistant"] ol,
+    [data-testid="stChatMessage"][data-testid*="assistant"] strong,
+    [data-testid="stChatMessage"][data-testid*="assistant"] em,
+    [data-testid="stChatMessage"][data-testid*="assistant"] b,
+    [data-testid="stChatMessage"][data-testid*="assistant"] i {
+        color: var(--dark-text) !important;
+        font-weight: 400 !important;
+        font-style: normal !important;
+        line-height: 1.6;
+    }
+    
+    /* Force all text elements to be normal */
+    [data-testid="stChatMessage"] strong,
+    [data-testid="stChatMessage"] b {
+        font-weight: 400 !important;
+    }
+    
+    [data-testid="stChatMessage"] em,
+    [data-testid="stChatMessage"] i {
+        font-style: normal !important;
+    }
+    
+    /* File Uploader */
+    [data-testid="stFileUploader"] {
+        background-color: var(--dark-card);
+        border: 2px dashed #404040;
+        border-radius: 8px;
+        padding: 1rem;
+    }
+    
+    [data-testid="stFileUploader"] label {
+        color: var(--dark-text) !important;
+        font-weight: 400 !important;
+    }
+    
+    /* Success/Warning/Error Messages */
+    .stSuccess {
+        background-color: var(--christmas-green);
+        color: white;
+        border-radius: 8px;
+        padding: 0.75rem;
+        font-weight: 400;
+    }
+    
+    .stWarning {
+        background-color: var(--christmas-gold);
+        color: #1E1E1E;
+        border-radius: 8px;
+        padding: 0.75rem;
+        font-weight: 400;
+    }
+    
+    .stError {
+        background-color: var(--christmas-red);
+        color: white;
+        border-radius: 8px;
+        padding: 0.75rem;
+        font-weight: 400;
     }
     
     /* Expander */
     .streamlit-expanderHeader {
-        background: #f3f4f6;
-        border-radius: 8px;
+        background-color: var(--dark-card);
+        border-radius: 6px;
         font-weight: 600;
-        color: #667eea;
+        color: var(--christmas-green);
     }
     
     .streamlit-expanderContent {
-        background: #fafafa;
+        background-color: #2A2A2A;
+        color: var(--dark-text);
+    }
+    
+    /* Chat Input */
+    .stChatInput input {
+        background-color: var(--dark-card);
+        color: var(--dark-text);
+        border: 1px solid #404040;
         border-radius: 8px;
-        padding: 1rem;
     }
     
-    /* Success/Error Messages */
-    .stSuccess {
-        background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+    .stChatInput input::placeholder {
+        color: #808080;
+    }
+    
+    /* Tips Container */
+    .tips-box {
+        background: linear-gradient(135deg, var(--christmas-red), var(--christmas-green));
         color: white;
+        padding: 1.5rem;
         border-radius: 12px;
-        padding: 1rem;
-        font-weight: 600;
-    }
-    
-    .stError {
-        background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
-        color: white;
-        border-radius: 12px;
-        padding: 1rem;
-        font-weight: 600;
-    }
-    
-    .stWarning {
-        background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
-        color: white;
-        border-radius: 12px;
-        padding: 1rem;
-        font-weight: 600;
-    }
-    
-    /* Loading Spinner */
-    .stSpinner > div {
-        border-color: #667eea !important;
-    }
-    
-    /* Processed Files Display */
-    .processed-file {
-        background: rgba(255, 255, 255, 0.2);
-        padding: 0.75rem;
-        border-radius: 8px;
-        margin: 0.5rem 0;
-        color: white;
-        font-weight: 500;
-        backdrop-filter: blur(10px);
-    }
-    
-    /* Tips Section */
-    .tips-container {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        padding: 2rem;
-        border-radius: 16px;
-        margin-top: 2rem;
-        color: white;
         text-align: center;
-        box-shadow: 0 10px 30px rgba(102, 126, 234, 0.3);
+        margin-top: 2rem;
     }
     
-    .tips-container h3 {
-        font-size: 24px;
-        font-weight: 700;
-        margin-bottom: 1rem;
+    .tips-box strong {
+        font-size: 20px;
+        font-weight: 600;
+        display: block;
+        margin-bottom: 0.75rem;
     }
     
-    .tips-container ul {
-        list-style: none;
-        padding: 0;
+    .tips-box p {
+        font-weight: 400;
     }
     
-    .tips-container li {
-        font-size: 16px;
-        margin: 0.75rem 0;
-        padding-left: 1.5rem;
-        position: relative;
+    /* Processed Files */
+    .processed-file {
+        background-color: var(--dark-card);
+        padding: 0.6rem;
+        border-radius: 6px;
+        margin: 0.4rem 0;
+        color: var(--dark-text);
+        font-size: 14px;
+        font-weight: 400;
+        border-left: 3px solid var(--christmas-green);
     }
     
-    .tips-container li:before {
-        content: "✨";
-        position: absolute;
-        left: 0;
+    /* Spinner */
+    .stSpinner > div {
+        border-top-color: var(--christmas-red) !important;
     }
     
-    /* Responsive Design */
-    @media (max-width: 768px) {
-        .app-title {
-            font-size: 36px;
-        }
-        
-        .main .block-container {
-            padding: 1rem;
-        }
+    /* Text elements uniform weight */
+    p, span, div, li {
+        font-weight: 400 !important;
     }
     </style>
 """, unsafe_allow_html=True)
@@ -326,7 +279,7 @@ if 'groq_client' not in st.session_state or st.session_state.groq_client is None
     try:
         st.session_state.groq_client = Groq(api_key=st.secrets["GROQ_API_KEY"])
         st.session_state.groq_client.models.list()
-        st.success("✅ Connected to Groq API successfully")
+        st.success("✅ Connected to Groq API successfully.")
     except Exception as e:
         st.error(f"❌ Error connecting to Groq: {str(e)}")
         st.session_state.groq_client = None
@@ -379,30 +332,48 @@ def create_document_chunks(text: str, filename: str) -> List[Document]:
     return [Document(page_content=chunk, metadata={"source": filename, "chunk": i}) for i, chunk in enumerate(chunks)]
 
 def clean_response_formatting(text: str) -> str:
-    """Remove markdown formatting (bold/italic) but keep bullet lists and normal spacing"""
+    """Remove ALL markdown formatting to ensure completely uniform text"""
+    # Remove bold markers (**text** or __text__)
     text = re.sub(r'\*\*(.+?)\*\*', r'\1', text)
     text = re.sub(r'__(.+?)__', r'\1', text)
+    
+    # Protect bullet points at the start of lines
     text = re.sub(r'^(\s*)[-*•]\s+', r'\1BULLETPOINT ', text, flags=re.MULTILINE)
+    
+    # Remove italic markers
     text = re.sub(r'\*(.+?)\*', r'\1', text)
     text = re.sub(r'_(.+?)_', r'\1', text)
+    
+    # Restore bullet points
     text = re.sub(r'BULLETPOINT ', '• ', text)
+    
+    # Remove mid-sentence bullets
     text = re.sub(r':\s*•\s*', ': ', text)
     text = re.sub(r'([a-zA-Z0-9])\s+•\s+', r'\1, ', text)
+    
+    # Remove headers
     text = re.sub(r'^#+\s+', '', text, flags=re.MULTILINE)
+    
+    # Remove strikethrough, code
     text = re.sub(r'~~(.+?)~~', r'\1', text)
     text = re.sub(r'`(.+?)`', r'\1', text)
     text = re.sub(r'```.*?```', '', text, flags=re.DOTALL)
+    
+    # Fix dollar sign spacing
     text = re.sub(r'(\$\d+(?:\.\d{2})?)([a-zA-Z])', r'\1 \2', text)
     text = re.sub(r'([a-zA-Z])(\$\d)', r'\1 \2', text)
     text = re.sub(r'(\$\d+(?:\.\d{2})?),([a-zA-Z])', r'\1, \2', text)
     text = re.sub(r'(\$\d+(?:\.\d{2})?)\)([a-zA-Z])', r'\1) \2', text)
+    
+    # Clean up whitespace
     text = re.sub(r'\n\s*\n\s*\n+', '\n\n', text)
     text = re.sub(r' +', ' ', text)
+    
     return text.strip()
 
 def process_documents(uploaded_files):
     all_docs = []
-    with st.spinner("🔄 Processing documents..."):
+    with st.spinner("Processing documents..."):
         for uploaded_file in uploaded_files:
             with tempfile.NamedTemporaryFile(delete=False, suffix='.pdf') as tmp_file:
                 tmp_file.write(uploaded_file.getvalue())
@@ -411,7 +382,7 @@ def process_documents(uploaded_files):
             text = clean_extracted_text(text)
             os.unlink(tmp_path)
             if not text:
-                st.warning(f"⚠️ No text extracted from {uploaded_file.name}")
+                st.warning(f"No text extracted from {uploaded_file.name}")
                 continue
             if not is_christmas_related(text):
                 st.warning(f"⚠️ {uploaded_file.name} may not be Christmas-related. Still processing.")
@@ -419,16 +390,16 @@ def process_documents(uploaded_files):
             all_docs.extend(docs)
             st.session_state.processed_files.append(uploaded_file.name)
     if not all_docs:
-        st.error("❌ No valid documents to process")
+        st.error("No valid documents to process")
         return None
-    with st.spinner("🧠 Creating embeddings..."):
+    with st.spinner("Creating embeddings..."):
         embeddings = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
     if st.session_state.vectorstore is None:
         vectorstore = FAISS.from_documents(all_docs, embeddings)
     else:
         st.session_state.vectorstore.add_documents(all_docs)
         vectorstore = st.session_state.vectorstore
-    st.success(f"✅ Successfully processed {len(uploaded_files)} document(s) into {len(all_docs)} chunks")
+    st.success(f"✅ Processed {len(uploaded_files)} document(s) into {len(all_docs)} chunks")
     return vectorstore
 
 def get_relevant_context(question: str, vectorstore, k=8):
@@ -452,7 +423,7 @@ Instructions:
 - You can use bullet points or numbered lists if it helps organize the information
 - Do NOT use bold (**text**) or italic (*text*) formatting
 - Use normal spacing and line breaks for readability
-- Write naturally and clearly
+- Write naturally and clearly in plain text only
 - When listing items (like "top 10 most expensive"), make sure to include ALL relevant items from the context, not just a few
 - Double-check that you've captured all the data points requested"""
     
@@ -462,7 +433,7 @@ Instructions:
             messages=[
                 {
                     "role": "system",
-                    "content": "You are a helpful assistant specialized in Christmas gift recommendations. Respond clearly and naturally. You can use bullet points, numbered lists, and normal formatting to organize information. However, do NOT use bold or italic text formatting. Keep all text in regular font weight. When asked for lists or rankings, be thorough and include ALL relevant items from the context provided."
+                    "content": "You are a helpful assistant specialized in Christmas gift recommendations. Respond clearly and naturally in plain text only. You can use bullet points, numbered lists, and normal formatting to organize information. However, do NOT use bold or italic text formatting. Keep all text in regular font weight. When asked for lists or rankings, be thorough and include ALL relevant items from the context provided."
                 },
                 {
                     "role": "user",
@@ -482,9 +453,9 @@ Instructions:
 
 def handle_user_input(user_question: str):
     if st.session_state.vectorstore is None:
-        st.warning("⚠️ Please upload and process documents first!")
+        st.warning("Please upload and process documents first!")
         return
-    with st.spinner("🤔 Thinking..."):
+    with st.spinner("Thinking..."):
         context, source_docs = get_relevant_context(user_question, st.session_state.vectorstore)
         answer = generate_answer(user_question, context, st.session_state.groq_client)
         st.session_state.chat_history.append({
@@ -494,48 +465,33 @@ def handle_user_input(user_question: str):
         })
 
 # ------------------------------
-# APP HEADER
+# APP TITLE
 # ------------------------------
 st.markdown('<div class="app-title">🎁 GiftxAI</div>', unsafe_allow_html=True)
-st.markdown('<div class="app-subtitle">AI-Powered Christmas Gift Recommendation System</div>', unsafe_allow_html=True)
+st.markdown('<div class="app-subtitle">AI-Powered Christmas Gift Recommendations</div>', unsafe_allow_html=True)
 
 # ------------------------------
 # SIDEBAR: PDF UPLOAD & PROCESS
 # ------------------------------
 with st.sidebar:
-    st.markdown("### 📄 Upload Documents")
-    st.markdown("---")
-    
+    st.header("📄 Upload Documents")
     uploaded_files = st.file_uploader(
-        "Upload PDF files containing Christmas gift catalogs",
+        "Upload PDF files about Christmas gifts",
         type=['pdf'],
-        accept_multiple_files=True,
-        help="Upload one or more PDF files with gift information"
+        accept_multiple_files=True
     )
-    
     if uploaded_files:
-        if st.button("🚀 Process Documents", type="primary"):
+        if st.button("Process Documents", type="primary"):
             st.session_state.vectorstore = process_documents(uploaded_files)
     
     if st.session_state.processed_files:
-        st.markdown("---")
-        st.markdown("### ✅ Processed Files")
+        st.header("✅ Processed Files")
         for f in st.session_state.processed_files:
             st.markdown(f'<div class="processed-file">📎 {f}</div>', unsafe_allow_html=True)
     
-    st.markdown("---")
-    
-    if st.button("🗑️ Clear Conversation", use_container_width=True):
+    if st.button("Clear Conversation"):
         st.session_state.chat_history = []
         st.rerun()
-    
-    st.markdown("---")
-    st.markdown("### 🎯 About")
-    st.markdown("""
-    <div style='color: white; font-size: 14px; line-height: 1.6;'>
-    GiftxAI uses advanced RAG (Retrieval-Augmented Generation) technology to provide intelligent gift recommendations based on your uploaded catalogs.
-    </div>
-    """, unsafe_allow_html=True)
 
 # ------------------------------
 # CHAT INTERFACE
@@ -553,23 +509,21 @@ with chat_container:
                         st.markdown(f"**Source {j+1}** ({doc.metadata.get('source','Unknown')})")
                         st.text(doc.page_content[:300]+"...")
 
-user_question = st.chat_input("💬 Ask a question about gifts...")
+user_question = st.chat_input("Ask a question about the Christmas gift documents...")
 if user_question:
     handle_user_input(user_question)
     st.rerun()
 
 # ------------------------------
-# TIPS SECTION (First Time Only)
+# FOOTER: Tips
 # ------------------------------
 if not st.session_state.chat_history:
-    st.markdown("""
-    <div class="tips-container">
-        <h3>💡 How to Use GiftxAI</h3>
-        <ul>
-            <li>Upload PDF catalogs containing Christmas gift information</li>
-            <li>Ask specific questions about gifts, pricing, or comparisons</li>
-            <li>Get personalized recommendations within your budget</li>
-            <li>View source documents for transparency</li>
-        </ul>
-    </div>
-    """, unsafe_allow_html=True)
+    st.markdown(
+        """
+        <div class="tips-box">
+        <strong>💡 How to Use</strong>
+        <p>Upload PDF documents with Christmas gifts info • Ask questions about gifts, pricing, or comparisons • Get AI-powered recommendations based on your documents</p>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
