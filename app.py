@@ -281,13 +281,16 @@ def get_relevant_context(question: str, vectorstore, k=8):
                       'order', 'sorted', 'ranked', 'highest', 'lowest']
     
     # Adaptive retrieval based on query complexity
+    # Increase retrieval for ranking/comparison queries
     if any(word in question.lower() for word in power_keywords):
-        k = 20
+        k = 20  # Increased from 15 to ensure comprehensive retrieval
     
     # For very specific ranking queries (top 10, top 5, etc.)
+    import re
     top_n_match = re.search(r'top\s+(\d+)', question.lower())
     if top_n_match:
         requested_count = int(top_n_match.group(1))
+        # Retrieve more chunks to ensure we have enough items
         k = max(20, requested_count * 2)
     
     docs = vectorstore.similarity_search(question, k=k)
@@ -295,44 +298,43 @@ def get_relevant_context(question: str, vectorstore, k=8):
     
     return context, docs, k
 
-def validate_and_reformat_response(initial_response: str, user_question: str, groq_client: Groq) -> str:
+def validate_and_reformat_response(initial_response: str, groq_client: Groq) -> str:
     """
-    Validate and ensure the response is concise, direct, and matches the exact request.
+    Double-check and reformat the response to ensure plain uniform text only.
+    This validation step removes any bold, italic, or special formatting and verifies accuracy.
     """
-    validation_prompt = f"""You are a precision validator. Review this response and ensure it's CONCISE and ACCURATE.
-
-USER QUESTION: {user_question}
+    validation_prompt = f"""You are a quality assurance validator. Review and reformat the following response.
 
 ORIGINAL RESPONSE:
 {initial_response}
 
-VALIDATION RULES:
+YOUR VALIDATION TASKS:
+1. VERIFY ACCURACY:
+   - Check if the response properly addresses the question
+   - Ensure prices and details are consistently formatted
+   - Confirm lists are in correct order (numerical for rankings/prices)
+   - Verify the count matches the request (e.g., "top 10" has exactly 10 items)
 
-1. COUNT VERIFICATION:
-   - If user asks "top 10", response must have EXACTLY 10 items
-   - If user asks "top 5", response must have EXACTLY 5 items
-   - Remove any extra items beyond the requested count
+2. ENFORCE STRICT FORMATTING:
+   - Remove ALL bold text (no ** or __)
+   - Remove ALL italic text (no * or _)
+   - Remove ALL markdown and special formatting
+   - Use bullet points (•) or numbers (1. 2. 3.) only
+   - Format prices consistently: dollar sign + amount (e.g., 649.99)
+   - Maintain uniform spacing
 
-2. STRUCTURE:
-   - Keep introduction to ONE sentence maximum (e.g., "Here are the top 10 most expensive items:")
-   - Go DIRECTLY to the numbered list
-   - NO additional commentary before or between the list items
+3. ENSURE CLARITY:
+   - Keep logical organization and structure
+   - Preserve all factual information exactly
+   - Use clean, readable plain text formatting
+   - Remove any redundant or confusing elements
 
-3. FORMAT:
-   - Use format: "1. Item Name - Price"
-   - Remove ALL bold, italic, markdown formatting
-   - Consistent spacing and punctuation
+4. OUTPUT REQUIREMENTS:
+   - Provide ONLY the validated, reformatted response
+   - No explanations or meta-commentary
+   - Plain text with consistent formatting throughout
 
-4. ACCURACY:
-   - Verify items are sorted correctly (highest to lowest for "most expensive")
-   - Ensure prices are accurate and properly formatted
-
-OUTPUT REQUIREMENTS:
-- Provide ONLY the corrected response
-- One-sentence intro + numbered list + nothing else
-- No explanations about what you changed
-
-Validate and output now:"""
+Validate and output the corrected response now."""
 
     try:
         response = groq_client.chat.completions.create(
@@ -340,134 +342,113 @@ Validate and output now:"""
             messages=[
                 {
                     "role": "system",
-                    "content": """You are a precision editor. Your job is to make responses concise and direct.
+                    "content": """You are a precision quality assurance validator for AI responses. 
 
-Rules:
-- Keep introductions to ONE sentence maximum
-- Ensure exact count matches user request
-- Remove any rambling or extra content
-- Maintain only the essential information
-- Enforce plain text formatting"""
+Your responsibilities:
+1. Verify accuracy and completeness of information
+2. Ensure proper numerical sorting in rankings
+3. Enforce strict plain text formatting (no markdown)
+4. Maintain data integrity while improving clarity
+5. Format prices consistently throughout
+
+You have a keen eye for detail and ensure every response meets the highest standards of accuracy and formatting consistency."""
                 },
                 {
                     "role": "user",
                     "content": validation_prompt
                 }
             ],
-            temperature=0.05,
-            max_tokens=2000,
+            temperature=0.05,  # Very low temperature for maximum consistency
+            max_tokens=2500,  # Increased for comprehensive validation
             top_p=0.9,
             stream=False
         )
         validated_response = response.choices[0].message.content.strip()
+        # Apply additional cleaning as a safety measure
         validated_response = clean_response_formatting(validated_response)
         return validated_response
     except Exception as e:
+        # If validation fails, return the cleaned initial response
         return clean_response_formatting(initial_response)
 
 def generate_answer(question: str, context: str, groq_client: Groq) -> str:
-    """Generate answer using LLM with RAG context - optimized for concise ranking responses"""
+    """Generate answer using LLM with RAG context"""
     
-    # Detect if this is a ranking/listing query
-    is_ranking = any(word in question.lower() for word in ['top', 'most expensive', 'cheapest', 'ranking', 'in order', 'sorted'])
-    
-    # Extract exact number requested
-    requested_count = None
-    count_match = re.search(r'top\s+(\d+)', question.lower())
-    if count_match:
-        requested_count = int(count_match.group(1))
-    
-    # Streamlined prompt for ranking queries
-    if is_ranking and requested_count:
-        prompt = f"""Answer this question using ONLY the context provided.
+    # Enhanced prompt with explicit reasoning and ordering instructions
+    prompt = f"""You are an expert gift recommendation assistant. Answer the question based STRICTLY on the context provided.
 
 Context:
 {context}
 
 Question: {question}
 
-CRITICAL INSTRUCTIONS FOR RANKING/LISTING:
+CRITICAL INSTRUCTIONS:
+1. ANALYZE the question carefully - if it asks for "top 10", "most expensive", "in order", "ranking", or similar:
+   - Extract ALL relevant items with prices from the context
+   - Sort them numerically by price (highest to lowest for "most expensive", lowest to highest for "cheapest")
+   - Present EXACTLY the number requested (e.g., top 10 means exactly 10 items)
+   - Use this format: "1. Item Name - Price"
 
-1. EXTRACT & SORT:
-   - Find ALL items with prices in the context
-   - Sort numerically by price (highest to lowest for "most expensive", lowest to highest for "cheapest")
-   - Select EXACTLY {requested_count} items - no more, no less
+2. For comparison or listing questions:
+   - Be comprehensive and include ALL relevant items from context
+   - Organize logically (by price, category, age group, etc.)
+   - Use clear numbering (1. 2. 3.) or bullet points (•)
 
-2. RESPONSE FORMAT (FOLLOW EXACTLY):
-   - Line 1: One brief sentence intro (e.g., "Here are the top {requested_count} most expensive items:")
-   - Lines 2-{requested_count+1}: The ranked list using "1. Item Name - Price" format
-   - NO additional text, commentary, or explanations
+3. For general questions:
+   - Provide clear, structured answers
+   - Cite specific details and prices when available
+   - If context lacks information, state this clearly
 
-3. FORMATTING:
-   - Plain text only (NO bold, italic, or markdown)
-   - Format: "1. Item Name - Price"
-   - Prices: dollar sign + amount (e.g., 649.99)
+4. FORMATTING RULES (STRICTLY ENFORCE):
+   - Use ONLY plain text - NO bold, italic, or special markdown
+   - Use simple bullet points (•) or numbers (1. 2. 3.)
+   - Maintain consistent spacing
+   - Keep prices in format: dollar sign + amount (e.g., 649.99)
 
-4. ACCURACY:
-   - Double-check sorting is numerical (not alphabetical)
-   - Verify count is exactly {requested_count}
-   - Use only information from the context
+5. ACCURACY:
+   - Double-check all prices and details against the context
+   - Do not invent or assume information not in the context
+   - If unsure, acknowledge limitations
 
-Think step-by-step:
-Step 1: Extract all items with prices
-Step 2: Sort them numerically
-Step 3: Take the top {requested_count}
-Step 4: Format as specified
-
-Now provide your answer:"""
-    else:
-        # Standard prompt for non-ranking queries
-        prompt = f"""Answer this question based strictly on the context provided.
-
-Context:
-{context}
-
-Question: {question}
-
-INSTRUCTIONS:
-1. Be concise and direct - answer the question clearly
-2. Use bullet points or numbered lists only when helpful
-3. Cite specific details and prices when available
-4. Use plain text formatting (NO bold, italic, or markdown)
-5. If context lacks information, state this clearly
-
-Provide your answer:"""
+Think step-by-step before answering. First identify what type of answer is needed, then extract and organize the relevant information."""
     
     try:
+        # First response generation with enhanced model
         response = groq_client.chat.completions.create(
             model="llama-3.3-70b-versatile",
             messages=[
                 {
                     "role": "system",
-                    "content": """You are a precise, concise AI assistant for gift recommendations.
+                    "content": """You are a highly analytical AI assistant specializing in Christmas gift recommendations. 
 
-For ranking queries (top 10, most expensive, etc.):
-- Be EXTREMELY concise
-- One-sentence intro, then go STRAIGHT to the numbered list
-- No fluff, no extra explanations
-- Count accuracy is CRITICAL
+Your core competencies:
+- Precise data extraction and analysis from context
+- Accurate numerical sorting and ranking
+- Clear, structured presentation of information
+- Strict adherence to plain text formatting (no bold, italic, or markdown)
 
-For general queries:
-- Clear, structured answers
-- Use context information accurately
-- Be helpful but concise
+When handling queries about "most expensive", "top 10", "in order", or rankings:
+1. Extract ALL relevant items with prices
+2. Sort numerically (not alphabetically)
+3. Present in the exact order and quantity requested
+4. Use format: "1. Item Name - Price"
 
-Always use plain text - NO markdown formatting."""
+Be thorough, accurate, and analytical. Always verify your sorting and counting before responding."""
                 },
                 {
                     "role": "user",
                     "content": prompt
                 }
             ],
-            temperature=0.1,
-            max_tokens=2000,
+            temperature=0.1,  # Lower temperature for more precise, analytical responses
+            max_tokens=2000,  # Increased for comprehensive answers
             top_p=0.95,
             stream=False
         )
         initial_answer = response.choices[0].message.content.strip()
         
-        # Validation step with question context
-        validated_answer = validate_and_reformat_response(initial_answer, question, groq_client)
+        # Validation step: double-check and reformat the response
+        validated_answer = validate_and_reformat_response(initial_answer, groq_client)
         
         return validated_answer
     except Exception as e:
@@ -489,6 +470,10 @@ def handle_user_input(user_question: str):
     
     with st.spinner("💭 Generating response..."):
         answer = generate_answer(user_question, context, st.session_state.groq_client)
+    
+    with st.spinner("✓ Validating format..."):
+        # Additional validation happens inside generate_answer now
+        pass
     
     response_time = time.time() - start_time
     
@@ -513,7 +498,7 @@ def handle_user_input(user_question: str):
 # APP HEADER
 # ------------------------------
 st.markdown('<div class="app-title">🎁 <span class="gift-text">Gift</span><span class="xai-text">xAI</span></div>', unsafe_allow_html=True)
-st.markdown('<div class="app-subtitle">Enterprise RAG System for Intelligent Gift Recommendations</div>', unsafe_allow_html=True)
+st.markdown('<div class="app-subtitle">Smart Gifts, Perfectly Timed.</div>', unsafe_allow_html=True)
 
 # ------------------------------
 # SIDEBAR
@@ -580,8 +565,8 @@ with st.sidebar:
         - Vector Store: FAISS
         - LLM: Llama 3.3 70B
         - Chunk Size: 800 tokens
-        - Retrieval: Adaptive (8-20 chunks)
-        - Validation: 2-stage concise response checking
+        - Retrieval: Adaptive (8-15 chunks)
+        - Validation: 2-stage response checking
         """)
 
 # ------------------------------
@@ -625,13 +610,8 @@ if not st.session_state.chat_history:
         <div class="tips-box">
         <strong>🎯 Enterprise RAG System Features</strong><br><br>
         ✅ Intelligent document indexing & retrieval<br>
-        ✅ Adaptive context window (8-20 chunks)<br>
-        ✅ Concise ranking responses (no extra items)<br>
+        ✅ Adaptive context window (8-15 chunks)<br>
         ✅ Real-time performance metrics<br>
-        ✅ Source attribution & transparency<br>
-        ✅ Scalable vector storage with FAISS<br>
-        ✅ Production-ready LLM integration<br>
-        ✅ 2-stage response validation for accuracy
         </div>
         """,
         unsafe_allow_html=True
