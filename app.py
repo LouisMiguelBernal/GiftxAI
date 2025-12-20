@@ -231,16 +231,19 @@ if user_question:
 # ------------------------------
 # FOOTER: Tips (centered, one-time)
 # ------------------------------
-if st.session_state.chat_history and 'tips_shown' not in st.session_state:
+if 'tips_shown' not in st.session_state:
     st.session_state.tips_shown = True
-    st.markdown(
-        """
-        <div style="text-align:center; font-size:18px; color:#4B0082; margin-top:30px;">
-        <strong>💡 Tips:</strong><br>
-        - Upload PDF documents with Christmas gifts, presents, or holiday shopping info<br>
-        - Ask specific questions about gifts, pricing, features, or comparisons<br>
-        - AI answers based <strong>ONLY</strong> on uploaded documents
-        </div>
-        """,
-        unsafe_allow_html=True
-    )
+
+    # Only show if there is no chat yet
+    if not st.session_state.chat_history:
+        st.markdown(
+            """
+            <div style="text-align:center; font-size:18px; color:#4B0082; margin-top:30px;">
+            <strong>💡 Tips:</strong><br>
+            - Upload PDF documents with Christmas gifts, presents, or holiday shopping info<br>
+            - Ask specific questions about gifts, pricing, features, or comparisons<br>
+            - AI answers based <strong>ONLY</strong> on uploaded documents
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
