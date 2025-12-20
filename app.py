@@ -127,15 +127,20 @@ def clean_response_formatting(text: str) -> str:
     text = re.sub(r'__(.+?)__', r'\1', text)
     
     # Remove italic markers (*text* or _text_) - but preserve bullet points
-    # First, protect bullet points by temporarily replacing them
+    # First, protect bullet points at the start of lines by temporarily replacing them
     text = re.sub(r'^(\s*)[-*•]\s+', r'\1BULLETPOINT ', text, flags=re.MULTILINE)
     
     # Now remove italic markers
     text = re.sub(r'\*(.+?)\*', r'\1', text)
     text = re.sub(r'_(.+?)_', r'\1', text)
     
-    # Restore bullet points
+    # Restore bullet points at start of lines
     text = re.sub(r'BULLETPOINT ', '• ', text)
+    
+    # Remove bullet points that appear in the middle of sentences (after colons or within text)
+    # This removes patterns like ": •" or "text • text"
+    text = re.sub(r':\s*•\s*', ': ', text)
+    text = re.sub(r'([a-zA-Z0-9])\s+•\s+', r'\1, ', text)
     
     # Remove headers (# ## ### etc.)
     text = re.sub(r'^#+\s+', '', text, flags=re.MULTILINE)
