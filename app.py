@@ -158,8 +158,22 @@ def clean_response_formatting(text: str) -> str:
     # Remove code blocks (```text```)
     text = re.sub(r'```.*?```', '', text, flags=re.DOTALL)
     
+    # Fix dollar sign spacing issues
+    # Add space after dollar amounts (e.g., "$150and" -> "$150 and")
+    text = re.sub(r'(\$\d+(?:\.\d{2})?)([a-zA-Z])', r'\1 \2', text)
+    
+    # Add space before dollar signs if missing (e.g., "item$150" -> "item $150")
+    text = re.sub(r'([a-zA-Z])(\$\d)', r'\1 \2', text)
+    
+    # Fix comma spacing after dollar amounts (e.g., "$150,the" -> "$150, the")
+    text = re.sub(r'(\$\d+(?:\.\d{2})?),([a-zA-Z])', r'\1, \2', text)
+    
+    # Fix spacing after closing parenthesis with dollar amounts (e.g., "$150)and" -> "$150) and")
+    text = re.sub(r'(\$\d+(?:\.\d{2})?)\)([a-zA-Z])', r'\1) \2', text)
+    
     # Clean up excessive whitespace but keep normal spacing
     text = re.sub(r'\n\s*\n\s*\n+', '\n\n', text)  # Max 2 newlines
+    text = re.sub(r' +', ' ', text)  # Remove multiple spaces
     
     return text.strip()
 
