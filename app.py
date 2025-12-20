@@ -66,27 +66,18 @@ if 'groq_client' not in st.session_state or st.session_state.groq_client is None
         st.session_state.groq_client = None
 
 # ------------------------------
-# SESSION STATE INIT
+# INITIALIZE SESSION STATE
 # ------------------------------
 if 'chat_history' not in st.session_state:
     st.session_state.chat_history = []
-
 if 'vectorstore' not in st.session_state:
     st.session_state.vectorstore = None
-
 if 'processed_files' not in st.session_state:
     st.session_state.processed_files = []
 
 # ------------------------------
 # HELPER FUNCTIONS
 # ------------------------------
-def escape_markdown(text: str) -> str:
-    """Escape characters that trigger markdown formatting in Streamlit."""
-    escape_chars = r"\`*_{}[]()#+-.!"
-    for char in escape_chars:
-        text = text.replace(char, f"\\{char}")
-    return text.strip()
-
 def clean_extracted_text(text: str) -> str:
     text = re.sub(r'(?<=\w)\s(?=\w)', '', text)
     text = re.sub(r'\s+', ' ', text)
@@ -95,29 +86,22 @@ def clean_extracted_text(text: str) -> str:
 def extract_text_from_pdf(pdf_file) -> str:
     try:
         pdf_reader = PdfReader(pdf_file)
-        text = "".join([page.extract_text() for page in pdf_reader.pages if page.extract_text()])
+        text = "".join([page.extract_text() for page in pdf_reader.pages])
         return text
     except Exception as e:
         st.error(f"Error reading PDF: {str(e)}")
         return ""
 
 def is_christmas_related(text: str) -> bool:
-    keywords = [
-        'christmas', 'xmas', 'gift', 'present', 'holiday', 
-        'santa', 'festive', 'celebration', 'december', 'winter',
-        'toy', 'decoration', 'tree', 'wrapping', 'seasonal'
-    ]
+    keywords = ['christmas', 'xmas', 'gift', 'present', 'holiday', 
+                'santa', 'festive', 'celebration', 'december', 'winter',
+                'toy', 'decoration', 'tree', 'wrapping', 'seasonal']
     return any(word in text.lower() for word in keywords)
 
 def create_document_chunks(text: str, filename: str) -> List[Document]:
-    splitter = RecursiveCharacterTextSplitter(
-        chunk_size=1000, chunk_overlap=200, length_function=len
-    )
+    splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200, length_function=len)
     chunks = splitter.split_text(text)
-    return [
-        Document(page_content=chunk, metadata={"source": filename, "chunk": i})
-        for i, chunk in enumerate(chunks)
-    ]
+    return [Document(page_content=chunk, metadata={"source": filename, "chunk": i}) for i, chunk in enumerate(chunks)]
 
 def process_documents(uploaded_files):
     all_docs = []
@@ -144,7 +128,6 @@ def process_documents(uploaded_files):
         embeddings = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
     if st.session_state.vectorstore is None:
         vectorstore = FAISS.from_documents(all_docs, embeddings)
-        st.session_state.vectorstore = vectorstore
     else:
         st.session_state.vectorstore.add_documents(all_docs)
         vectorstore = st.session_state.vectorstore
@@ -168,10 +151,8 @@ Answer:"""
     try:
         response = groq_client.chat.completions.create(
             model="llama-3.3-70b-versatile",
-            messages=[
-                {"role": "system", "content": "You are a helpful assistant specialized in Christmas gift recommendations."},
-                {"role": "user", "content": prompt}
-            ],
+            messages=[{"role":"system","content":"You are a helpful assistant specialized in Christmas gift recommendations."},
+                      {"role":"user","content":prompt}],
             temperature=0.7,
             max_tokens=500,
             top_p=1,
@@ -188,10 +169,9 @@ def handle_user_input(user_question: str):
     with st.spinner("Thinking..."):
         context, source_docs = get_relevant_context(user_question, st.session_state.vectorstore)
         answer = generate_answer(user_question, context, st.session_state.groq_client)
-        cleaned_answer = escape_markdown(answer)
         st.session_state.chat_history.append({
             'question': user_question,
-            'answer': cleaned_answer,
+            'answer': answer,
             'sources': source_docs
         })
 
@@ -201,7 +181,7 @@ def handle_user_input(user_question: str):
 st.markdown('<div class="app-title">🎁 GiftxAI</div>', unsafe_allow_html=True)
 
 # ------------------------------
-# SIDEBAR
+# SIDEBAR: PDF UPLOAD & PROCESS
 # ------------------------------
 with st.sidebar:
     st.header("📄 Upload Documents")
@@ -213,12 +193,10 @@ with st.sidebar:
     if uploaded_files:
         if st.button("Process Documents", type="primary"):
             st.session_state.vectorstore = process_documents(uploaded_files)
-
     if st.session_state.processed_files:
         st.header("✅ Processed Files")
         for f in st.session_state.processed_files:
             st.text(f"📎 {f}")
-
     if st.button("Clear Conversation"):
         st.session_state.chat_history = []
         st.rerun()
@@ -232,29 +210,34 @@ with chat_container:
         with st.chat_message("user"):
             st.write(message['question'])
         with st.chat_message("assistant"):
-            st.markdown(message['answer'], unsafe_allow_html=False)
+            st.write(message['answer'])
             if message.get('sources'):
                 with st.expander("📚 View Sources"):
                     for j, doc in enumerate(message['sources'][:3]):
                         st.markdown(f"**Source {j+1}** ({doc.metadata.get('source','Unknown')})")
-                        st.text(doc.page_content[:300] + "...")
+                        st.text(doc.page_content[:300]+"...")
 
 user_question = st.chat_input("Ask a question about the Christmas gift documents...")
 if user_question:
     handle_user_input(user_question)
     st.rerun()
-
 # ------------------------------
-# FOOTER TIPS (ONE-TIME)
+# FOOTER: Tips (centered, one-time)
 # ------------------------------
 if 'tips_shown' not in st.session_state:
     st.session_state.tips_shown = True
+
+    # Only show if there is no chat yet
     if not st.session_state.chat_history:
-        st.markdown("""
+        st.markdown(
+            """
             <div style="text-align:center; font-size:18px; color:#4B0082; margin-top:30px;">
             <strong>💡 Tips:</strong><br>
             - Upload PDF documents with Christmas gifts, presents, or holiday shopping info<br>
             - Ask specific questions about gifts, pricing, features, or comparisons<br>
             - AI answers based <strong>ONLY</strong> on uploaded documents
             </div>
-        """, unsafe_allow_html=True)
+            """,
+            unsafe_allow_html=True
+        )
+
