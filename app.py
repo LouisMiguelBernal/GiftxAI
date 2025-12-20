@@ -85,6 +85,13 @@ if 'processed_files' not in st.session_state:
 # ------------------------------
 # HELPER FUNCTIONS
 # ------------------------------
+def escape_markdown(text: str) -> str:
+    """Escape characters that trigger markdown formatting in Streamlit."""
+    escape_chars = r"\`*_{}[]()#+-.!"
+    for char in escape_chars:
+        text = text.replace(char, f"\\{char}")
+    return text.strip()
+    
 def clean_extracted_text(text: str) -> str:
     text = re.sub(r'(?<=\w)\s(?=\w)', '', text)
     text = re.sub(r'\s+', ' ', text)
@@ -176,11 +183,14 @@ def handle_user_input(user_question: str):
     with st.spinner("Thinking..."):
         context, source_docs = get_relevant_context(user_question, st.session_state.vectorstore)
         answer = generate_answer(user_question, context, st.session_state.groq_client)
+        # Escape markdown to prevent sideways/italic text
+        cleaned_answer = escape_markdown(answer)
         st.session_state.chat_history.append({
             'question': user_question,
-            'answer': answer,
+            'answer': cleaned_answer,  # store the cleaned version
             'sources': source_docs
         })
+
 
 # ------------------------------
 # APP TITLE
@@ -217,7 +227,7 @@ with chat_container:
         with st.chat_message("user"):
             st.write(message['question'])
         with st.chat_message("assistant"):
-            st.write(message['answer'])
+            st.markdown(message['answer'], unsafe_allow_html=False)  # use markdown for safe plain text
             if message.get('sources'):
                 with st.expander("📚 View Sources"):
                     for j, doc in enumerate(message['sources'][:3]):
@@ -247,4 +257,5 @@ if 'tips_shown' not in st.session_state:
             """,
             unsafe_allow_html=True
         )
+
 
