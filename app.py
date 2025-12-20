@@ -197,46 +197,25 @@ def create_document_chunks(text: str, filename: str) -> List[Document]:
     return [Document(page_content=chunk, metadata={"source": filename, "chunk": i}) for i, chunk in enumerate(chunks)]
 
 def clean_response_formatting(text: str) -> str:
-    """Remove ALL markdown formatting for completely uniform text display"""
-    # Remove bold (** and __)
+    """Remove markdown formatting for uniform text display"""
     text = re.sub(r'\*\*(.+?)\*\*', r'\1', text)
     text = re.sub(r'__(.+?)__', r'\1', text)
-    
-    # Remove italic (* and _) - but preserve bullet points
-    text = re.sub(r'(?<!\w)\*(?!\s)(.+?)(?<!\s)\*(?!\w)', r'\1', text)
-    text = re.sub(r'(?<!\w)_(?!\s)(.+?)(?<!\s)_(?!\w)', r'\1', text)
-    
-    # Handle bullet points carefully
-    text = re.sub(r'^(\s*)[-*•]\s+', r'\1• ', text, flags=re.MULTILINE)
-    
-    # Remove headers (# ## ###)
+    text = re.sub(r'^(\s*)[-*•]\s+', r'\1BULLETPOINT ', text, flags=re.MULTILINE)
+    text = re.sub(r'\*(.+?)\*', r'\1', text)
+    text = re.sub(r'_(.+?)_', r'\1', text)
+    text = re.sub(r'BULLETPOINT ', '• ', text)
+    text = re.sub(r':\s*•\s*', ': ', text)
+    text = re.sub(r'([a-zA-Z0-9])\s+•\s+', r'\1, ', text)
     text = re.sub(r'^#+\s+', '', text, flags=re.MULTILINE)
-    
-    # Remove strikethrough
     text = re.sub(r'~~(.+?)~~', r'\1', text)
-    
-    # Remove inline code
     text = re.sub(r'`(.+?)`', r'\1', text)
-    
-    # Remove code blocks
     text = re.sub(r'```.*?```', '', text, flags=re.DOTALL)
-    
-    # Fix spacing around prices
     text = re.sub(r'(\$\d+(?:\.\d{2})?)([a-zA-Z])', r'\1 \2', text)
     text = re.sub(r'([a-zA-Z])(\$\d)', r'\1 \2', text)
     text = re.sub(r'(\$\d+(?:\.\d{2})?),([a-zA-Z])', r'\1, \2', text)
     text = re.sub(r'(\$\d+(?:\.\d{2})?)\)([a-zA-Z])', r'\1) \2', text)
-    
-    # Clean up excessive line breaks
     text = re.sub(r'\n\s*\n\s*\n+', '\n\n', text)
-    
-    # Clean up multiple spaces
     text = re.sub(r' +', ' ', text)
-    
-    # Final pass: remove any remaining * or _ that might be formatting
-    text = re.sub(r'\*\*', '', text)
-    text = re.sub(r'__', '', text)
-    
     return text.strip()
 
 def process_documents(uploaded_files):
@@ -318,61 +297,42 @@ def get_relevant_context(question: str, vectorstore, k=8):
 
 def validate_and_reformat_response(initial_response: str, user_question: str, groq_client: Groq) -> str:
     """
-    STAGE 2 VALIDATION: Aggressively ensure the response has proper structure and ZERO markdown formatting.
+    Validate and ensure the response is concise, direct, and matches the exact request.
     """
-    validation_prompt = f"""You are a STRICT formatting enforcer. Your ONLY job is to remove ALL markdown and ensure plain text.
+    validation_prompt = f"""You are a precision validator. Review this response and ensure it's CONCISE and ACCURATE.
 
 USER QUESTION: {user_question}
 
 ORIGINAL RESPONSE:
 {initial_response}
 
-CRITICAL FORMATTING RULES - NO EXCEPTIONS:
+VALIDATION RULES:
 
-1. REMOVE ALL MARKDOWN:
-   - NO asterisks for bold (**text**) or italic (*text*)
-   - NO underscores for bold (__text__) or italic (_text_)
-   - NO hash symbols for headers (# ## ###)
-   - NO backticks for code (`code`)
-   - ONLY use bullet points with • symbol or numbers 1. 2. 3.
+1. COUNT VERIFICATION:
+   - If user asks "top 10", response must have EXACTLY 10 items
+   - If user asks "top 5", response must have EXACTLY 5 items
+   - Remove any extra items beyond the requested count
 
-2. STRUCTURE VERIFICATION:
-   - Must have INTRODUCTION (1-2 sentences)
-   - Must have BODY (main content)
-   - Must have CONCLUSION (1-2 sentences)
+2. STRUCTURE:
+   - Keep introduction to ONE sentence maximum (e.g., "Here are the top 10 most expensive items:")
+   - Go DIRECTLY to the numbered list
+   - NO additional commentary before or between the list items
 
-3. COUNT VERIFICATION (if ranking):
-   - If user asks "top 10", body must have EXACTLY 10 items
-   - Remove any extra items beyond requested count
+3. FORMAT:
+   - Use format: "1. Item Name - Price"
+   - Remove ALL bold, italic, markdown formatting
+   - Consistent spacing and punctuation
 
-4. CLEAN TEXT ONLY:
-   - Use plain characters only
-   - Bullet points: • 
-   - Numbers: 1. 2. 3.
-   - Prices: $99.99 (dollar sign + number)
-   - NO special formatting whatsoever
-
-5. EXAMPLE OF CORRECT OUTPUT:
-   Introduction sentence here.
-   
-   For Your Wife:
-   • Item Name - $99.99 (reason)
-   • Item Name - $149.99 (reason)
-   
-   For Your Kid:
-   • Item Name - $79.99 (reason)
-   
-   Conclusion sentence here.
-
-CRITICAL: Your output must be 100% plain text. If you see ANY asterisks (*), underscores (_), or markdown symbols, you MUST remove them.
+4. ACCURACY:
+   - Verify items are sorted correctly (highest to lowest for "most expensive")
+   - Ensure prices are accurate and properly formatted
 
 OUTPUT REQUIREMENTS:
-- Provide ONLY the cleaned response
-- Absolutely NO markdown formatting
-- Must have: Introduction + Body + Conclusion
-- No explanations
+- Provide ONLY the corrected response
+- One-sentence intro + numbered list + nothing else
+- No explanations about what you changed
 
-Output the cleaned plain text response now:"""
+Validate and output now:"""
 
     try:
         response = groq_client.chat.completions.create(
@@ -380,64 +340,36 @@ Output the cleaned plain text response now:"""
             messages=[
                 {
                     "role": "system",
-                    "content": """You are a STRICT plain text enforcer. Your mission is to eliminate ALL markdown formatting.
+                    "content": """You are a precision editor. Your job is to make responses concise and direct.
 
-ABSOLUTE RULES:
-- Remove ALL asterisks used for formatting
-- Remove ALL underscores used for formatting  
-- Remove ALL hash symbols for headers
-- Keep ONLY plain text with bullet points (•) or numbers
-- Every response must have: Introduction, Body, Conclusion
-- Zero tolerance for markdown - if you see *, _, **, __, #, remove them immediately
-
-You output ONLY plain text. No markdown. Ever."""
+Rules:
+- Keep introductions to ONE sentence maximum
+- Ensure exact count matches user request
+- Remove any rambling or extra content
+- Maintain only the essential information
+- Enforce plain text formatting"""
                 },
                 {
                     "role": "user",
                     "content": validation_prompt
                 }
             ],
-            temperature=0.01,  # Extremely low for consistency
-            max_tokens=2500,
-            top_p=0.85,
+            temperature=0.05,
+            max_tokens=2000,
+            top_p=0.9,
             stream=False
         )
         validated_response = response.choices[0].message.content.strip()
-        
-        # AGGRESSIVE cleaning pass - remove any remaining markdown
         validated_response = clean_response_formatting(validated_response)
-        
-        # Extra safety: one more pass to catch stubborn formatting
-        validated_response = re.sub(r'\*\*', '', validated_response)
-        validated_response = re.sub(r'__', '', validated_response)
-        validated_response = re.sub(r'(?<!\w)\*(?!\s)', '', validated_response)
-        validated_response = re.sub(r'(?<!\s)\*(?!\w)', '', validated_response)
-        validated_response = re.sub(r'(?<!\w)_(?!\s)', '', validated_response)
-        validated_response = re.sub(r'(?<!\s)_(?!\w)', '', validated_response)
-        
         return validated_response
     except Exception as e:
-        # If validation fails, apply aggressive cleaning to initial response
-        cleaned = clean_response_formatting(initial_response)
-        cleaned = re.sub(r'\*\*', '', cleaned)
-        cleaned = re.sub(r'__', '', cleaned)
-        cleaned = re.sub(r'(?<!\w)\*', '', cleaned)
-        cleaned = re.sub(r'\*(?!\w)', '', cleaned)
-        return cleaned
+        return clean_response_formatting(initial_response)
 
 def generate_answer(question: str, context: str, groq_client: Groq) -> str:
     """Generate answer using LLM with RAG context - optimized for concise ranking responses"""
     
-    # Detect query type
+    # Detect if this is a ranking/listing query
     is_ranking = any(word in question.lower() for word in ['top', 'most expensive', 'cheapest', 'ranking', 'in order', 'sorted'])
-    is_budget_query = any(word in question.lower() for word in ['budget', 'have', 'spend', 'afford', 'price range', 'under', 'within'])
-    has_multiple_recipients = any(word in question.lower() for word in ['wife and', 'husband and', 'kids and', 'family', 'everyone', 'both'])
-    
-    # Extract budget if mentioned
-    budget_match = re.search(r'(?:have|budget|spend)\s*(?:of)?\s*\$?(\d+(?:,\d{3})*(?:\.\d{2})?)', question.lower())
-    budget_amount = None
-    if budget_match:
-        budget_amount = float(budget_match.group(1).replace(',', ''))
     
     # Extract exact number requested
     requested_count = None
@@ -445,62 +377,8 @@ def generate_answer(question: str, context: str, groq_client: Groq) -> str:
     if count_match:
         requested_count = int(count_match.group(1))
     
-    # Budget-based recommendation prompt with partitioning
-    if is_budget_query and budget_amount and has_multiple_recipients:
-        prompt = f"""Answer this question using ONLY the context provided.
-
-Context:
-{context}
-
-Question: {question}
-
-CRITICAL INSTRUCTIONS FOR BUDGET RECOMMENDATIONS:
-
-RESPONSE STRUCTURE (FOLLOW THIS EXACTLY):
-
-1. INTRODUCTION (2-3 sentences):
-   - Acknowledge the budget amount
-   - Mention the recipients
-   - Brief overview of your recommendation approach
-
-2. BODY - Organize by RECIPIENT:
-   
-   For Your Wife:
-   • Item 1 - Price (with brief reason why it's suitable)
-   • Item 2 - Price (with reason)
-   • Item 3 - Price (with reason)
-   Subtotal: $X
-   
-   For Your Kid(s):
-   • Item 1 - Price (with brief reason)
-   • Item 2 - Price (with reason)
-   • Item 3 - Price (with reason)
-   Subtotal: $X
-
-3. CONCLUSION/SUMMARY (2-3 sentences):
-   - Budget Summary: Total Spent: $X, Remaining: $X
-   - Brief comment on the selection balance
-   - Encouraging closing remark about the gifts
-
-ALLOCATION STRATEGY:
-- Divide budget appropriately based on recipients
-- Select items that fit within the budget
-- Aim to use 80-95% of budget
-- Mix of price points and practical/fun items
-- Match items to recipient interests and age
-
-FORMATTING:
-- Use plain text (NO bold/italic/markdown)
-- Clear section headers
-- Include prices and brief reasons
-- CRITICAL: Do NOT use asterisks (*) or underscores (_) for formatting
-- CRITICAL: Do NOT use ** or __ for bold text
-- Use ONLY plain characters and bullet points (•)
-
-Provide your complete recommendation with intro, body, and conclusion in PLAIN TEXT ONLY:"""
-    
     # Streamlined prompt for ranking queries
-    elif is_ranking and requested_count:
+    if is_ranking and requested_count:
         prompt = f"""Answer this question using ONLY the context provided.
 
 Context:
@@ -510,44 +388,35 @@ Question: {question}
 
 CRITICAL INSTRUCTIONS FOR RANKING/LISTING:
 
-RESPONSE STRUCTURE (FOLLOW THIS EXACTLY):
+1. EXTRACT & SORT:
+   - Find ALL items with prices in the context
+   - Sort numerically by price (highest to lowest for "most expensive", lowest to highest for "cheapest")
+   - Select EXACTLY {requested_count} items - no more, no less
 
-1. INTRODUCTION (1-2 sentences):
-   - Acknowledge what the user is asking for
-   - Brief context about the ranking criteria
-   Example: "Here are the top {requested_count} most expensive items from our catalog. These premium options represent the highest-priced gifts available."
+2. RESPONSE FORMAT (FOLLOW EXACTLY):
+   - Line 1: One brief sentence intro (e.g., "Here are the top {requested_count} most expensive items:")
+   - Lines 2-{requested_count+1}: The ranked list using "1. Item Name - Price" format
+   - NO additional text, commentary, or explanations
 
-2. BODY - THE RANKING:
-   1. Item Name - Price
-   2. Item Name - Price
-   3. Item Name - Price
-   (continue exactly {requested_count} items)
+3. FORMATTING:
+   - Plain text only (NO bold, italic, or markdown)
+   - Format: "1. Item Name - Price"
+   - Prices: dollar sign + amount (e.g., 649.99)
 
-3. CONCLUSION (1-2 sentences):
-   - Summary observation about the price range
-   - Helpful closing remark
-   Example: "These items range from $X to $X, offering premium gift options for various occasions."
+4. ACCURACY:
+   - Double-check sorting is numerical (not alphabetical)
+   - Verify count is exactly {requested_count}
+   - Use only information from the context
 
-EXTRACTION & SORTING RULES:
-- Find ALL items with prices in the context
-- Sort numerically by price (highest to lowest for "most expensive", lowest to highest for "cheapest")
-- Select EXACTLY {requested_count} items - no more, no less
+Think step-by-step:
+Step 1: Extract all items with prices
+Step 2: Sort them numerically
+Step 3: Take the top {requested_count}
+Step 4: Format as specified
 
-FORMATTING:
-- Plain text only (NO bold, italic, or markdown)
-- Format: "1. Item Name - Price"
-- Prices: dollar sign + amount (e.g., 649.99)
-- CRITICAL: Do NOT use * or _ or ** or __ for any formatting
-- CRITICAL: Use ONLY plain text and numbers
-
-ACCURACY:
-- Double-check sorting is numerical (not alphabetical)
-- Verify count is exactly {requested_count}
-- Use only information from the context
-
-Provide your complete response with intro, ranking, and conclusion in PLAIN TEXT ONLY:"""
+Now provide your answer:"""
     else:
-        # Standard prompt for non-ranking, non-budget queries
+        # Standard prompt for non-ranking queries
         prompt = f"""Answer this question based strictly on the context provided.
 
 Context:
@@ -555,32 +424,14 @@ Context:
 
 Question: {question}
 
-RESPONSE STRUCTURE (FOLLOW THIS EXACTLY):
-
-1. INTRODUCTION (1-2 sentences):
-   - Acknowledge the user's question
-   - Provide brief context or overview
-
-2. BODY (Main Content):
-   - Answer the question with relevant details
-   - Organize by categories, features, or bullet points as appropriate
-   - Include prices, specifications, age recommendations when relevant
-   - Use clear sections if multiple topics are covered
-
-3. CONCLUSION (1-2 sentences):
-   - Summarize key points or recommendations
-   - Provide helpful closing remark or suggestion
-
 INSTRUCTIONS:
-- Be conversational and helpful - not robotic
-- Organize information logically (by category, recipient, price range, etc.)
-- Use bullet points or sections when it improves clarity
-- Include relevant details like prices, features, age recommendations
-- Use plain text formatting (NO bold, italic, or markdown)
-- CRITICAL: Do NOT use * _ ** __ for formatting - use ONLY plain text
-- If context lacks information, state this clearly but offer what you can
+1. Be concise and direct - answer the question clearly
+2. Use bullet points or numbered lists only when helpful
+3. Cite specific details and prices when available
+4. Use plain text formatting (NO bold, italic, or markdown)
+5. If context lacks information, state this clearly
 
-Provide a complete response with introduction, body, and conclusion in PLAIN TEXT ONLY:"""
+Provide your answer:"""
     
     try:
         response = groq_client.chat.completions.create(
@@ -588,35 +439,20 @@ Provide a complete response with introduction, body, and conclusion in PLAIN TEX
             messages=[
                 {
                     "role": "system",
-                    "content": """You are a thoughtful, personable gift recommendation assistant.
-
-CRITICAL FORMATTING RULE: Output ONLY plain text - absolutely NO markdown formatting.
-- NEVER use asterisks (*) for italic or bold
-- NEVER use underscores (_) for italic or bold  
-- NEVER use ** or __ for bold text
-- Use ONLY plain characters, bullet points (•), and numbers (1. 2. 3.)
-
-CRITICAL: Every response must have THREE parts:
-1. INTRODUCTION (1-2 sentences) - Set context and acknowledge the question
-2. BODY (main content) - Detailed answer with rankings/lists/information
-3. CONCLUSION (1-2 sentences) - Summary or helpful closing remark
-
-For budget queries with multiple recipients:
-- Introduction: Acknowledge budget and recipients
-- Body: Partition recommendations by recipient with prices and reasons
-- Conclusion: Budget summary and encouraging remark
+                    "content": """You are a precise, concise AI assistant for gift recommendations.
 
 For ranking queries (top 10, most expensive, etc.):
-- Introduction: Context about what's being ranked
-- Body: The exact numbered list (must match requested count)
-- Conclusion: Price range observation or helpful note
+- Be EXTREMELY concise
+- One-sentence intro, then go STRAIGHT to the numbered list
+- No fluff, no extra explanations
+- Count accuracy is CRITICAL
 
 For general queries:
-- Introduction: Acknowledge the question
-- Body: Organized information with details
-- Conclusion: Summary or recommendation
+- Clear, structured answers
+- Use context information accurately
+- Be helpful but concise
 
-Remember: Output plain text ONLY. No asterisks, no underscores for formatting."""
+Always use plain text - NO markdown formatting."""
                 },
                 {
                     "role": "user",
@@ -630,19 +466,8 @@ Remember: Output plain text ONLY. No asterisks, no underscores for formatting.""
         )
         initial_answer = response.choices[0].message.content.strip()
         
-        # STAGE 1: Initial cleaning
-        initial_answer = clean_response_formatting(initial_answer)
-        
-        # STAGE 2: Validation and aggressive re-formatting
+        # Validation step with question context
         validated_answer = validate_and_reformat_response(initial_answer, question, groq_client)
-        
-        # STAGE 3: Final safety pass - nuclear option to remove ALL remaining markdown
-        validated_answer = re.sub(r'\*\*(.+?)\*\*', r'\1', validated_answer)  # Bold
-        validated_answer = re.sub(r'__(.+?)__', r'\1', validated_answer)      # Bold
-        validated_answer = re.sub(r'(?<!\w)\*(.+?)\*(?!\w)', r'\1', validated_answer)  # Italic
-        validated_answer = re.sub(r'(?<!\w)_(.+?)_(?!\w)', r'\1', validated_answer)    # Italic
-        validated_answer = re.sub(r'\*\*', '', validated_answer)  # Stray **
-        validated_answer = re.sub(r'__', '', validated_answer)    # Stray __
         
         return validated_answer
     except Exception as e:
@@ -801,7 +626,6 @@ if not st.session_state.chat_history:
         <strong>🎯 Enterprise RAG System Features</strong><br><br>
         ✅ Intelligent document indexing & retrieval<br>
         ✅ Adaptive context window (8-20 chunks)<br>
-        ✅ Budget-aware partitioned recommendations<br>
         ✅ Concise ranking responses (no extra items)<br>
         ✅ Real-time performance metrics<br>
         ✅ Source attribution & transparency<br>
