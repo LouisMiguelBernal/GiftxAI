@@ -116,7 +116,11 @@ def is_christmas_related(text: str) -> bool:
     return any(word in text.lower() for word in keywords)
 
 def create_document_chunks(text: str, filename: str) -> List[Document]:
-    splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200, length_function=len)
+    splitter = RecursiveCharacterTextSplitter(
+        chunk_size=800,  # Smaller chunks for better granularity
+        chunk_overlap=150,  # More overlap to preserve context
+        length_function=len
+    )
     chunks = splitter.split_text(text)
     return [Document(page_content=chunk, metadata={"source": filename, "chunk": i}) for i, chunk in enumerate(chunks)]
 
@@ -190,7 +194,12 @@ def process_documents(uploaded_files):
     st.success(f"✅ Processed {len(uploaded_files)} document(s) into {len(all_docs)} chunks")
     return vectorstore
 
-def get_relevant_context(question: str, vectorstore, k=3):
+def get_relevant_context(question: str, vectorstore, k=8):
+    """Get relevant context with intelligent k value based on query type"""
+    # Increase k for queries that need comprehensive data
+    if any(word in question.lower() for word in ['top', 'most', 'best', 'all', 'list', 'expensive', 'cheapest', 'compare', 'ranking', 'every', 'entire']):
+        k = 15  # Get many more chunks for comparison/ranking queries
+    
     docs = vectorstore.similarity_search(question, k=k)
     context = "\n\n".join([doc.page_content for doc in docs])
     return context, docs
@@ -208,7 +217,9 @@ Instructions:
 - You can use bullet points or numbered lists if it helps organize the information
 - Do NOT use bold (**text**) or italic (*text*) formatting
 - Use normal spacing and line breaks for readability
-- Write naturally and clearly"""
+- Write naturally and clearly
+- When listing items (like "top 10 most expensive"), make sure to include ALL relevant items from the context, not just a few
+- Double-check that you've captured all the data points requested"""
     
     try:
         response = groq_client.chat.completions.create(
@@ -216,15 +227,15 @@ Instructions:
             messages=[
                 {
                     "role": "system",
-                    "content": "You are a helpful assistant specialized in Christmas gift recommendations. Respond clearly and naturally. You can use bullet points, numbered lists, and normal formatting to organize information. However, do NOT use bold or italic text formatting. Keep all text in regular font weight."
+                    "content": "You are a helpful assistant specialized in Christmas gift recommendations. Respond clearly and naturally. You can use bullet points, numbered lists, and normal formatting to organize information. However, do NOT use bold or italic text formatting. Keep all text in regular font weight. When asked for lists or rankings, be thorough and include ALL relevant items from the context provided."
                 },
                 {
                     "role": "user",
                     "content": prompt
                 }
             ],
-            temperature=0.7,
-            max_tokens=800,
+            temperature=0.2,  # Even lower for more precision
+            max_tokens=1500,  # More space for comprehensive answers
             top_p=1,
             stream=False
         )
