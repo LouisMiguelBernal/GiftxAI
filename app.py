@@ -35,14 +35,21 @@ st.markdown("""
     .app-title {
         font-size: 48px;
         font-weight: 700;
-        color: var(--accent-red);
         text-align: center;
         margin-bottom: 8px;
     }
     
+    .app-title .gift-text {
+        color: var(--accent-red);
+    }
+    
+    .app-title .xai-text {
+        color: var(--accent-green);
+    }
+    
     .app-subtitle {
         text-align: center;
-        color: var(--accent-green);
+        color: #FFB703;
         font-size: 18px;
         font-weight: 500;
         margin-bottom: 24px;
@@ -97,6 +104,19 @@ st.markdown("""
         border-radius: 12px;
         text-align: center;
         margin-top: 2rem;
+    }
+    
+    .features-row {
+        display: flex;
+        justify-content: space-around;
+        align-items: center;
+        gap: 2rem;
+        margin-top: 1rem;
+    }
+    
+    .feature-item {
+        flex: 1;
+        text-align: center;
     }
     
     .feature-badge {
@@ -257,34 +277,253 @@ def process_documents(uploaded_files):
 def get_relevant_context(question: str, vectorstore, k=8):
     """Intelligent retrieval with adaptive context window"""
     power_keywords = ['top', 'most', 'best', 'all', 'list', 'expensive', 
-                      'cheapest', 'compare', 'ranking', 'every', 'entire']
+                      'cheapest', 'compare', 'ranking', 'every', 'entire',
+                      'order', 'sorted', 'ranked', 'highest', 'lowest']
     
     # Adaptive retrieval based on query complexity
     if any(word in question.lower() for word in power_keywords):
-        k = 15
+        k = 20
+    
+    # For very specific ranking queries (top 10, top 5, etc.)
+    top_n_match = re.search(r'top\s+(\d+)', question.lower())
+    if top_n_match:
+        requested_count = int(top_n_match.group(1))
+        k = max(20, requested_count * 2)
     
     docs = vectorstore.similarity_search(question, k=k)
     context = "\n\n".join([doc.page_content for doc in docs])
     
     return context, docs, k
 
+def validate_and_reformat_response(initial_response: str, user_question: str, groq_client: Groq) -> str:
+    """
+    Validate and ensure the response has proper structure: introduction, body, and conclusion.
+    """
+    validation_prompt = f"""You are a precision validator. Review this response and ensure it has PROPER STRUCTURE.
+
+USER QUESTION: {user_question}
+
+ORIGINAL RESPONSE:
+{initial_response}
+
+VALIDATION RULES:
+
+1. STRUCTURE VERIFICATION:
+   - Must have INTRODUCTION (1-2 sentences acknowledging the question)
+   - Must have BODY (main content - ranking list, bullet points, or detailed answer)
+   - Must have CONCLUSION (1-2 sentences summarizing or closing)
+   
+2. COUNT VERIFICATION (if applicable):
+   - If user asks "top 10", body must have EXACTLY 10 items
+   - If user asks "top 5", body must have EXACTLY 5 items
+   - Remove any extra items beyond the requested count
+
+3. FORMAT:
+   - Remove ALL bold, italic, markdown formatting
+   - Use format: "1. Item Name - Price" for rankings
+   - Use bullet points (•) for lists
+   - Consistent spacing and punctuation
+
+4. CONTENT FLOW:
+   - Introduction sets context
+   - Body provides detailed information
+   - Conclusion wraps up with summary or helpful remark
+
+5. ACCURACY:
+   - Verify items are sorted correctly if it's a ranking
+   - Ensure prices are accurate and properly formatted
+   - Check that all information flows logically
+
+OUTPUT REQUIREMENTS:
+- Provide ONLY the corrected response
+- Must have: Introduction + Body + Conclusion
+- No explanations about what you changed
+
+Validate and output the properly structured response now:"""
+
+    try:
+        response = groq_client.chat.completions.create(
+            model="llama-3.3-70b-versatile",
+            messages=[
+                {
+                    "role": "system",
+                    "content": """You are a precision editor ensuring proper response structure.
+
+Rules:
+- Every response must have: Introduction, Body, Conclusion
+- Introduction: 1-2 sentences setting context
+- Body: Main content (ranking, details, bullet points)
+- Conclusion: 1-2 sentences summarizing or closing
+- Ensure exact count matches user request for rankings
+- Remove any rambling or extra content
+- Enforce plain text formatting"""
+                },
+                {
+                    "role": "user",
+                    "content": validation_prompt
+                }
+            ],
+            temperature=0.05,
+            max_tokens=2500,
+            top_p=0.9,
+            stream=False
+        )
+        validated_response = response.choices[0].message.content.strip()
+        validated_response = clean_response_formatting(validated_response)
+        return validated_response
+    except Exception as e:
+        return clean_response_formatting(initial_response)
+
 def generate_answer(question: str, context: str, groq_client: Groq) -> str:
-    """Generate answer using LLM with RAG context"""
-    prompt = f"""Answer the question based ONLY on the context provided below about Christmas gifts.
+    """Generate answer using LLM with RAG context - optimized for concise ranking responses"""
+    
+    # Detect query type
+    is_ranking = any(word in question.lower() for word in ['top', 'most expensive', 'cheapest', 'ranking', 'in order', 'sorted'])
+    is_budget_query = any(word in question.lower() for word in ['budget', 'have', 'spend', 'afford', 'price range', 'under', 'within'])
+    has_multiple_recipients = any(word in question.lower() for word in ['wife and', 'husband and', 'kids and', 'family', 'everyone', 'both'])
+    
+    # Extract budget if mentioned
+    budget_match = re.search(r'(?:have|budget|spend)\s*(?:of)?\s*\$?(\d+(?:,\d{3})*(?:\.\d{2})?)', question.lower())
+    budget_amount = None
+    if budget_match:
+        budget_amount = float(budget_match.group(1).replace(',', ''))
+    
+    # Extract exact number requested
+    requested_count = None
+    count_match = re.search(r'top\s+(\d+)', question.lower())
+    if count_match:
+        requested_count = int(count_match.group(1))
+    
+    # Budget-based recommendation prompt with partitioning
+    if is_budget_query and budget_amount and has_multiple_recipients:
+        prompt = f"""Answer this question using ONLY the context provided.
 
 Context:
 {context}
 
 Question: {question}
 
-Instructions:
-- Provide a clear, well-structured answer
-- Use bullet points or numbered lists to organize information
-- Do NOT use bold (**text**) or italic (*text*) formatting
-- Write in plain text with normal spacing
-- For lists/rankings, include ALL relevant items from the context
-- If the context doesn't contain enough information, say so
-- Cite specific details from the context when possible"""
+CRITICAL INSTRUCTIONS FOR BUDGET RECOMMENDATIONS:
+
+RESPONSE STRUCTURE (FOLLOW THIS EXACTLY):
+
+1. INTRODUCTION (2-3 sentences):
+   - Acknowledge the budget amount
+   - Mention the recipients
+   - Brief overview of your recommendation approach
+
+2. BODY - Organize by RECIPIENT:
+   
+   For Your Wife:
+   • Item 1 - Price (with brief reason why it's suitable)
+   • Item 2 - Price (with reason)
+   • Item 3 - Price (with reason)
+   Subtotal: $X
+   
+   For Your Kid(s):
+   • Item 1 - Price (with brief reason)
+   • Item 2 - Price (with reason)
+   • Item 3 - Price (with reason)
+   Subtotal: $X
+
+3. CONCLUSION/SUMMARY (2-3 sentences):
+   - Budget Summary: Total Spent: $X, Remaining: $X
+   - Brief comment on the selection balance
+   - Encouraging closing remark about the gifts
+
+ALLOCATION STRATEGY:
+- Divide budget appropriately based on recipients
+- Select items that fit within the budget
+- Aim to use 80-95% of budget
+- Mix of price points and practical/fun items
+- Match items to recipient interests and age
+
+FORMATTING:
+- Use plain text (NO bold/italic/markdown)
+- Clear section headers
+- Include prices and brief reasons
+
+Provide your complete recommendation with intro, body, and conclusion:"""
+    
+    # Streamlined prompt for ranking queries
+    elif is_ranking and requested_count:
+        prompt = f"""Answer this question using ONLY the context provided.
+
+Context:
+{context}
+
+Question: {question}
+
+CRITICAL INSTRUCTIONS FOR RANKING/LISTING:
+
+RESPONSE STRUCTURE (FOLLOW THIS EXACTLY):
+
+1. INTRODUCTION (1-2 sentences):
+   - Acknowledge what the user is asking for
+   - Brief context about the ranking criteria
+   Example: "Here are the top {requested_count} most expensive items from our catalog. These premium options represent the highest-priced gifts available."
+
+2. BODY - THE RANKING:
+   1. Item Name - Price
+   2. Item Name - Price
+   3. Item Name - Price
+   (continue exactly {requested_count} items)
+
+3. CONCLUSION (1-2 sentences):
+   - Summary observation about the price range
+   - Helpful closing remark
+   Example: "These items range from $X to $X, offering premium gift options for various occasions."
+
+EXTRACTION & SORTING RULES:
+- Find ALL items with prices in the context
+- Sort numerically by price (highest to lowest for "most expensive", lowest to highest for "cheapest")
+- Select EXACTLY {requested_count} items - no more, no less
+
+FORMATTING:
+- Plain text only (NO bold, italic, or markdown)
+- Format: "1. Item Name - Price"
+- Prices: dollar sign + amount (e.g., 649.99)
+
+ACCURACY:
+- Double-check sorting is numerical (not alphabetical)
+- Verify count is exactly {requested_count}
+- Use only information from the context
+
+Provide your complete response with intro, ranking, and conclusion:"""
+    else:
+        # Standard prompt for non-ranking, non-budget queries
+        prompt = f"""Answer this question based strictly on the context provided.
+
+Context:
+{context}
+
+Question: {question}
+
+RESPONSE STRUCTURE (FOLLOW THIS EXACTLY):
+
+1. INTRODUCTION (1-2 sentences):
+   - Acknowledge the user's question
+   - Provide brief context or overview
+
+2. BODY (Main Content):
+   - Answer the question with relevant details
+   - Organize by categories, features, or bullet points as appropriate
+   - Include prices, specifications, age recommendations when relevant
+   - Use clear sections if multiple topics are covered
+
+3. CONCLUSION (1-2 sentences):
+   - Summarize key points or recommendations
+   - Provide helpful closing remark or suggestion
+
+INSTRUCTIONS:
+- Be conversational and helpful - not robotic
+- Organize information logically (by category, recipient, price range, etc.)
+- Use bullet points or sections when it improves clarity
+- Include relevant details like prices, features, age recommendations
+- Use plain text formatting (NO bold, italic, or markdown)
+- If context lacks information, state this clearly but offer what you can
+
+Provide a complete response with introduction, body, and conclusion:"""
     
     try:
         response = groq_client.chat.completions.create(
@@ -292,21 +531,46 @@ Instructions:
             messages=[
                 {
                     "role": "system",
-                    "content": "You are an AI assistant specializing in Christmas gift recommendations. Respond in plain text only - no bold or italic formatting. Use bullet points and lists for organization. Be thorough, accurate, and cite information from the provided context."
+                    "content": """You are a thoughtful, personable gift recommendation assistant.
+
+CRITICAL: Every response must have THREE parts:
+1. INTRODUCTION (1-2 sentences) - Set context and acknowledge the question
+2. BODY (main content) - Detailed answer with rankings/lists/information
+3. CONCLUSION (1-2 sentences) - Summary or helpful closing remark
+
+For budget queries with multiple recipients:
+- Introduction: Acknowledge budget and recipients
+- Body: Partition recommendations by recipient with prices and reasons
+- Conclusion: Budget summary and encouraging remark
+
+For ranking queries (top 10, most expensive, etc.):
+- Introduction: Context about what's being ranked
+- Body: The exact numbered list (must match requested count)
+- Conclusion: Price range observation or helpful note
+
+For general queries:
+- Introduction: Acknowledge the question
+- Body: Organized information with details
+- Conclusion: Summary or recommendation
+
+Always use plain text - NO markdown formatting."""
                 },
                 {
                     "role": "user",
                     "content": prompt
                 }
             ],
-            temperature=0.2,
-            max_tokens=1500,
-            top_p=1,
+            temperature=0.1,
+            max_tokens=2000,
+            top_p=0.95,
             stream=False
         )
-        answer = response.choices[0].message.content.strip()
-        answer = clean_response_formatting(answer)
-        return answer
+        initial_answer = response.choices[0].message.content.strip()
+        
+        # Validation step with question context
+        validated_answer = validate_and_reformat_response(initial_answer, question, groq_client)
+        
+        return validated_answer
     except Exception as e:
         return f"Error generating response: {str(e)}"
 
@@ -349,7 +613,7 @@ def handle_user_input(user_question: str):
 # ------------------------------
 # APP HEADER
 # ------------------------------
-st.markdown('<div class="app-title">🎁 GiftxAI</div>', unsafe_allow_html=True)
+st.markdown('<div class="app-title">🎁 <span class="gift-text">Gift</span><span class="xai-text">xAI</span></div>', unsafe_allow_html=True)
 st.markdown('<div class="app-subtitle">Enterprise RAG System for Intelligent Gift Recommendations</div>', unsafe_allow_html=True)
 
 # ------------------------------
@@ -417,7 +681,8 @@ with st.sidebar:
         - Vector Store: FAISS
         - LLM: Llama 3.3 70B
         - Chunk Size: 800 tokens
-        - Retrieval: Adaptive (8-15 chunks)
+        - Retrieval: Adaptive (8-20 chunks)
+        - Validation: 2-stage concise response checking
         """)
 
 # ------------------------------
@@ -461,29 +726,15 @@ if not st.session_state.chat_history:
         <div class="tips-box">
         <strong>🎯 Enterprise RAG System Features</strong><br><br>
         ✅ Intelligent document indexing & retrieval<br>
-        ✅ Adaptive context window (8-15 chunks)<br>
+        ✅ Adaptive context window (8-20 chunks)<br>
+        ✅ Budget-aware partitioned recommendations<br>
+        ✅ Concise ranking responses (no extra items)<br>
         ✅ Real-time performance metrics<br>
         ✅ Source attribution & transparency<br>
         ✅ Scalable vector storage with FAISS<br>
-        ✅ Production-ready LLM integration
+        ✅ Production-ready LLM integration<br>
+        ✅ 2-stage response validation for accuracy
         </div>
         """,
         unsafe_allow_html=True
     )
-    
-    # Features showcase
-    st.subheader("🌟 Key Capabilities")
-    
-    col1, col2, col3 = st.columns(3)
-    
-    with col1:
-        st.markdown("### 📊 Analytics")
-        st.markdown("- Query tracking\n- Response time monitoring\n- Document metrics\n- Usage statistics")
-    
-    with col2:
-        st.markdown("### 🎯 Smart Retrieval")
-        st.markdown("- Semantic search\n- Adaptive context\n- Relevance ranking\n- Multi-document support")
-    
-    with col3:
-        st.markdown("### 🔒 Enterprise Ready")
-        st.markdown("- Error handling\n- Source verification\n- Clean formatting\n- Scalable architecture")
