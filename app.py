@@ -82,10 +82,22 @@ def clean_extracted_text(text: str) -> str:
     """Clean extracted text while preserving important spacing"""
     # Replace multiple spaces with single space
     text = re.sub(r' +', ' ', text)
+    
+    # Add space after dollar signs if missing (e.g., "$150Smartwatch" -> "$150 Smartwatch")
+    text = re.sub(r'\$(\d+(?:\.\d{2})?)', r'$\1 ', text)
+    
+    # Add space before dollar signs if missing (e.g., "item$150" -> "item $150")
+    text = re.sub(r'([a-zA-Z])(\$\d)', r'\1 \2', text)
+    
     # Replace multiple newlines with double newline
     text = re.sub(r'\n\s*\n+', '\n\n', text)
+    
     # Remove leading/trailing whitespace from lines
     text = '\n'.join(line.strip() for line in text.split('\n'))
+    
+    # Clean up any double spaces created
+    text = re.sub(r' +', ' ', text)
+    
     return text.strip()
 
 def extract_text_from_pdf(pdf_file) -> str:
