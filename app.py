@@ -109,14 +109,21 @@ def create_document_chunks(text: str, filename: str) -> List[Document]:
     return [Document(page_content=chunk, metadata={"source": filename, "chunk": i}) for i, chunk in enumerate(chunks)]
 
 def clean_response_formatting(text: str) -> str:
-    """Remove markdown formatting from the response to ensure uniform plain text output"""
+    """Remove markdown formatting (bold/italic) but keep bullet lists and normal spacing"""
     # Remove bold markers (**text** or __text__)
     text = re.sub(r'\*\*(.+?)\*\*', r'\1', text)
     text = re.sub(r'__(.+?)__', r'\1', text)
     
-    # Remove italic markers (*text* or _text_)
+    # Remove italic markers (*text* or _text_) - but preserve bullet points
+    # First, protect bullet points by temporarily replacing them
+    text = re.sub(r'^(\s*)[-*•]\s+', r'\1BULLETPOINT ', text, flags=re.MULTILINE)
+    
+    # Now remove italic markers
     text = re.sub(r'\*(.+?)\*', r'\1', text)
     text = re.sub(r'_(.+?)_', r'\1', text)
+    
+    # Restore bullet points
+    text = re.sub(r'BULLETPOINT ', '• ', text)
     
     # Remove headers (# ## ### etc.)
     text = re.sub(r'^#+\s+', '', text, flags=re.MULTILINE)
@@ -130,13 +137,8 @@ def clean_response_formatting(text: str) -> str:
     # Remove code blocks (```text```)
     text = re.sub(r'```.*?```', '', text, flags=re.DOTALL)
     
-    # Clean up bullet points and dashes at start of lines
-    text = re.sub(r'^\s*[-•]\s+', '', text, flags=re.MULTILINE)
-    text = re.sub(r'^\s*\d+\.\s+', '', text, flags=re.MULTILINE)
-    
-    # Clean up any extra whitespace
-    text = re.sub(r'\n\s*\n+', '\n\n', text)
-    text = re.sub(r' +', ' ', text)
+    # Clean up excessive whitespace but keep normal spacing
+    text = re.sub(r'\n\s*\n\s*\n+', '\n\n', text)  # Max 2 newlines
     
     return text.strip()
 
@@ -185,12 +187,11 @@ Context:
 Question: {question}
 
 Instructions:
-- Provide a clear, well-structured answer in plain text
-- Write in complete sentences with proper spacing
-- Use natural paragraph breaks for readability
-- Do NOT use any markdown formatting (no bold, italics, headers, bullet points, or numbered lists)
-- Present information in flowing prose format
-- Make sure prices and product names are clearly separated with proper spacing"""
+- Provide a clear, well-structured answer
+- You can use bullet points or numbered lists if it helps organize the information
+- Do NOT use bold (**text**) or italic (*text*) formatting
+- Use normal spacing and line breaks for readability
+- Write naturally and clearly"""
     
     try:
         response = groq_client.chat.completions.create(
@@ -198,7 +199,7 @@ Instructions:
             messages=[
                 {
                     "role": "system",
-                    "content": "You are a helpful assistant specialized in Christmas gift recommendations. Always respond in plain text format with proper spacing and readability. Write in flowing prose using complete sentences and paragraphs. Never use markdown formatting, bullet points, numbered lists, or special characters. Ensure prices and product names have proper spacing."
+                    "content": "You are a helpful assistant specialized in Christmas gift recommendations. Respond clearly and naturally. You can use bullet points, numbered lists, and normal formatting to organize information. However, do NOT use bold or italic text formatting. Keep all text in regular font weight."
                 },
                 {
                     "role": "user",
