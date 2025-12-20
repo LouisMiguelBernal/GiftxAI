@@ -61,13 +61,11 @@ st.markdown("""
 # ------------------------------
 # GROQ API KEY (HIDDEN)
 # ------------------------------
-GROQ_API_KEY = "YOUR_GROQ_API_KEY_HERE"
-
 if 'groq_client' not in st.session_state or st.session_state.groq_client is None:
     try:
-        st.session_state.groq_client = Groq(api_key=GROQ_API_KEY)
-        st.session_state.groq_client.models.list()
-        print("✅ Connected to Groq API successfully.")
+        st.session_state.groq_client = Groq(api_key=st.secrets["GROQ_API_KEY"])
+        st.session_state.groq_client.models.list()  # simple test to verify connection
+        st.success("✅ Connected to Groq API successfully.")
     except Exception as e:
         st.error(f"❌ Error connecting to Groq: {str(e)}")
         st.session_state.groq_client = None
@@ -77,8 +75,10 @@ if 'groq_client' not in st.session_state or st.session_state.groq_client is None
 # ------------------------------
 if 'chat_history' not in st.session_state:
     st.session_state.chat_history = []
+
 if 'vectorstore' not in st.session_state:
     st.session_state.vectorstore = None
+
 if 'processed_files' not in st.session_state:
     st.session_state.processed_files = []
 
@@ -247,3 +247,4 @@ if 'tips_shown' not in st.session_state:
             """,
             unsafe_allow_html=True
         )
+
