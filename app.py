@@ -20,216 +20,83 @@ st.set_page_config(
 )
 
 # ------------------------------
-# DARK MODE CHRISTMAS-THEMED CSS
+# MINIMAL THEME-AGNOSTIC CSS (Works with Streamlit's Dark/Light Toggle)
 # ------------------------------
 st.markdown("""
     <style>
-    /* Dark Mode Christmas Theme */
+    /* Christmas Accent Colors - Work in both themes */
     :root {
-        --christmas-red: #E63946;
-        --christmas-green: #2D6A4F;
-        --christmas-gold: #FFB703;
-        --dark-bg: #1E1E1E;
-        --dark-card: #2D2D2D;
-        --dark-text: #E0E0E0;
-    }
-    
-    /* Main Background */
-    .stApp {
-        background-color: var(--dark-bg);
-        color: var(--dark-text);
+        --accent-red: #C41E3A;
+        --accent-green: #165B33;
     }
     
     /* App Title */
     .app-title {
         font-size: 48px;
         font-weight: 700;
-        color: var(--christmas-red);
+        color: var(--accent-red);
         text-align: center;
         margin-bottom: 8px;
     }
     
     .app-subtitle {
         text-align: center;
-        color: var(--christmas-green);
+        color: var(--accent-green);
         font-size: 18px;
-        font-weight: 600;
+        font-weight: 500;
         margin-bottom: 24px;
     }
     
-    /* Headers */
-    h1, h2, h3 {
-        color: var(--christmas-green) !important;
-        font-weight: 600 !important;
-    }
-    
-    /* Sidebar */
-    [data-testid="stSidebar"] {
-        background-color: #252525;
-    }
-    
-    [data-testid="stSidebar"] h2,
-    [data-testid="stSidebar"] h3 {
-        color: var(--christmas-red) !important;
-        font-weight: 600 !important;
-    }
-    
-    [data-testid="stSidebar"] label,
-    [data-testid="stSidebar"] p {
-        color: var(--dark-text) !important;
+    /* CRITICAL: Force uniform text in ALL chat messages */
+    [data-testid="stChatMessage"] p,
+    [data-testid="stChatMessage"] span,
+    [data-testid="stChatMessage"] div,
+    [data-testid="stChatMessage"] li,
+    [data-testid="stChatMessage"] ul,
+    [data-testid="stChatMessage"] ol,
+    [data-testid="stChatMessage"] strong,
+    [data-testid="stChatMessage"] em,
+    [data-testid="stChatMessage"] b,
+    [data-testid="stChatMessage"] i {
         font-weight: 400 !important;
+        font-style: normal !important;
     }
     
-    /* Buttons */
+    /* User message accent */
+    [data-testid="stChatMessage"][data-testid*="user"] {
+        background-color: var(--accent-red);
+        opacity: 0.9;
+    }
+    
+    /* Assistant message accent */
+    [data-testid="stChatMessage"][data-testid*="assistant"] {
+        border-left: 4px solid var(--accent-green);
+    }
+    
+    /* Primary button styling */
     .stButton > button[kind="primary"] {
-        background-color: var(--christmas-red);
-        color: white;
+        background-color: var(--accent-red);
         font-weight: 600;
-        height: 48px;
         border-radius: 8px;
-        border: none;
-        transition: all 0.2s;
+        height: 48px;
     }
     
     .stButton > button[kind="primary"]:hover {
-        background-color: #D62839;
-        box-shadow: 0 4px 8px rgba(230, 57, 70, 0.4);
+        background-color: #A01729;
     }
     
-    .stButton > button {
-        background-color: var(--dark-card);
-        color: var(--christmas-green);
-        font-weight: 600;
-        height: 45px;
-        border-radius: 8px;
-        border: 2px solid var(--christmas-green);
-        transition: all 0.2s;
-    }
-    
-    .stButton > button:hover {
-        background-color: var(--christmas-green);
-        color: white;
-    }
-    
-    /* Chat Messages */
-    .stChatMessage {
-        border-radius: 12px;
-        padding: 1.2rem;
-        margin-bottom: 1rem;
-    }
-    
-    /* User Messages */
-    [data-testid="stChatMessage"][data-testid*="user"] {
-        background-color: var(--christmas-red);
-    }
-    
-    [data-testid="stChatMessage"][data-testid*="user"] p,
-    [data-testid="stChatMessage"][data-testid*="user"] span,
-    [data-testid="stChatMessage"][data-testid*="user"] div {
-        color: white !important;
-        font-weight: 400 !important;
-        font-style: normal !important;
-    }
-    
-    /* Assistant Messages - FORCE UNIFORM TEXT */
-    [data-testid="stChatMessage"][data-testid*="assistant"] {
-        background-color: var(--dark-card);
-        border-left: 4px solid var(--christmas-green);
-    }
-    
-    [data-testid="stChatMessage"][data-testid*="assistant"] p,
-    [data-testid="stChatMessage"][data-testid*="assistant"] span,
-    [data-testid="stChatMessage"][data-testid*="assistant"] div,
-    [data-testid="stChatMessage"][data-testid*="assistant"] li,
-    [data-testid="stChatMessage"][data-testid*="assistant"] ul,
-    [data-testid="stChatMessage"][data-testid*="assistant"] ol,
-    [data-testid="stChatMessage"][data-testid*="assistant"] strong,
-    [data-testid="stChatMessage"][data-testid*="assistant"] em,
-    [data-testid="stChatMessage"][data-testid*="assistant"] b,
-    [data-testid="stChatMessage"][data-testid*="assistant"] i {
-        color: var(--dark-text) !important;
-        font-weight: 400 !important;
-        font-style: normal !important;
-        line-height: 1.6;
-    }
-    
-    /* Force all text elements to be normal */
-    [data-testid="stChatMessage"] strong,
-    [data-testid="stChatMessage"] b {
-        font-weight: 400 !important;
-    }
-    
-    [data-testid="stChatMessage"] em,
-    [data-testid="stChatMessage"] i {
-        font-style: normal !important;
-    }
-    
-    /* File Uploader */
-    [data-testid="stFileUploader"] {
-        background-color: var(--dark-card);
-        border: 2px dashed #404040;
-        border-radius: 8px;
-        padding: 1rem;
-    }
-    
-    [data-testid="stFileUploader"] label {
-        color: var(--dark-text) !important;
-        font-weight: 400 !important;
-    }
-    
-    /* Success/Warning/Error Messages */
-    .stSuccess {
-        background-color: var(--christmas-green);
-        color: white;
-        border-radius: 8px;
-        padding: 0.75rem;
-        font-weight: 400;
-    }
-    
-    .stWarning {
-        background-color: var(--christmas-gold);
-        color: #1E1E1E;
-        border-radius: 8px;
-        padding: 0.75rem;
-        font-weight: 400;
-    }
-    
-    .stError {
-        background-color: var(--christmas-red);
-        color: white;
-        border-radius: 8px;
-        padding: 0.75rem;
-        font-weight: 400;
-    }
-    
-    /* Expander */
-    .streamlit-expanderHeader {
-        background-color: var(--dark-card);
+    /* Processed files display */
+    .processed-file {
+        padding: 0.6rem;
         border-radius: 6px;
-        font-weight: 600;
-        color: var(--christmas-green);
+        margin: 0.5rem 0;
+        border-left: 3px solid var(--accent-green);
+        font-weight: 400;
     }
     
-    .streamlit-expanderContent {
-        background-color: #2A2A2A;
-        color: var(--dark-text);
-    }
-    
-    /* Chat Input */
-    .stChatInput input {
-        background-color: var(--dark-card);
-        color: var(--dark-text);
-        border: 1px solid #404040;
-        border-radius: 8px;
-    }
-    
-    .stChatInput input::placeholder {
-        color: #808080;
-    }
-    
-    /* Tips Container */
+    /* Tips box */
     .tips-box {
-        background: linear-gradient(135deg, var(--christmas-red), var(--christmas-green));
+        background: linear-gradient(135deg, var(--accent-red), var(--accent-green));
         color: white;
         padding: 1.5rem;
         border-radius: 12px;
@@ -238,36 +105,7 @@ st.markdown("""
     }
     
     .tips-box strong {
-        font-size: 20px;
         font-weight: 600;
-        display: block;
-        margin-bottom: 0.75rem;
-    }
-    
-    .tips-box p {
-        font-weight: 400;
-    }
-    
-    /* Processed Files */
-    .processed-file {
-        background-color: var(--dark-card);
-        padding: 0.6rem;
-        border-radius: 6px;
-        margin: 0.4rem 0;
-        color: var(--dark-text);
-        font-size: 14px;
-        font-weight: 400;
-        border-left: 3px solid var(--christmas-green);
-    }
-    
-    /* Spinner */
-    .stSpinner > div {
-        border-top-color: var(--christmas-red) !important;
-    }
-    
-    /* Text elements uniform weight */
-    p, span, div, li {
-        font-weight: 400 !important;
     }
     </style>
 """, unsafe_allow_html=True)
@@ -279,9 +117,9 @@ if 'groq_client' not in st.session_state or st.session_state.groq_client is None
     try:
         st.session_state.groq_client = Groq(api_key=st.secrets["GROQ_API_KEY"])
         st.session_state.groq_client.models.list()
-        st.success("✅ Connected to Groq API successfully.")
+        st.success("✅ Connected to Groq API")
     except Exception as e:
-        st.error(f"❌ Error connecting to Groq: {str(e)}")
+        st.error(f"❌ Error: {str(e)}")
         st.session_state.groq_client = None
 
 # ------------------------------
@@ -333,18 +171,18 @@ def create_document_chunks(text: str, filename: str) -> List[Document]:
 
 def clean_response_formatting(text: str) -> str:
     """Remove ALL markdown formatting to ensure completely uniform text"""
-    # Remove bold markers (**text** or __text__)
+    # Remove bold
     text = re.sub(r'\*\*(.+?)\*\*', r'\1', text)
     text = re.sub(r'__(.+?)__', r'\1', text)
     
-    # Protect bullet points at the start of lines
+    # Protect bullet points
     text = re.sub(r'^(\s*)[-*•]\s+', r'\1BULLETPOINT ', text, flags=re.MULTILINE)
     
-    # Remove italic markers
+    # Remove italic
     text = re.sub(r'\*(.+?)\*', r'\1', text)
     text = re.sub(r'_(.+?)_', r'\1', text)
     
-    # Restore bullet points
+    # Restore bullets
     text = re.sub(r'BULLETPOINT ', '• ', text)
     
     # Remove mid-sentence bullets
@@ -359,13 +197,13 @@ def clean_response_formatting(text: str) -> str:
     text = re.sub(r'`(.+?)`', r'\1', text)
     text = re.sub(r'```.*?```', '', text, flags=re.DOTALL)
     
-    # Fix dollar sign spacing
+    # Fix dollar spacing
     text = re.sub(r'(\$\d+(?:\.\d{2})?)([a-zA-Z])', r'\1 \2', text)
     text = re.sub(r'([a-zA-Z])(\$\d)', r'\1 \2', text)
     text = re.sub(r'(\$\d+(?:\.\d{2})?),([a-zA-Z])', r'\1, \2', text)
     text = re.sub(r'(\$\d+(?:\.\d{2})?)\)([a-zA-Z])', r'\1) \2', text)
     
-    # Clean up whitespace
+    # Clean whitespace
     text = re.sub(r'\n\s*\n\s*\n+', '\n\n', text)
     text = re.sub(r' +', ' ', text)
     
@@ -403,9 +241,13 @@ def process_documents(uploaded_files):
     return vectorstore
 
 def get_relevant_context(question: str, vectorstore, k=8):
-    """Get relevant context with intelligent k value based on query type"""
-    if any(word in question.lower() for word in ['top', 'most', 'best', 'all', 'list', 'expensive', 'cheapest', 'compare', 'ranking', 'every', 'entire']):
+    """Intelligent retrieval based on query type"""
+    # Power queries get more context
+    power_keywords = ['top', 'most', 'best', 'all', 'list', 'expensive', 
+                      'cheapest', 'compare', 'ranking', 'every', 'entire']
+    if any(word in question.lower() for word in power_keywords):
         k = 15
+    
     docs = vectorstore.similarity_search(question, k=k)
     context = "\n\n".join([doc.page_content for doc in docs])
     return context, docs
@@ -420,12 +262,11 @@ Question: {question}
 
 Instructions:
 - Provide a clear, well-structured answer
-- You can use bullet points or numbered lists if it helps organize the information
+- You can use bullet points or numbered lists to organize information
 - Do NOT use bold (**text**) or italic (*text*) formatting
-- Use normal spacing and line breaks for readability
-- Write naturally and clearly in plain text only
-- When listing items (like "top 10 most expensive"), make sure to include ALL relevant items from the context, not just a few
-- Double-check that you've captured all the data points requested"""
+- Write in plain text with normal spacing
+- For lists/rankings, include ALL relevant items from the context
+- Double-check completeness of your answer"""
     
     try:
         response = groq_client.chat.completions.create(
@@ -433,7 +274,7 @@ Instructions:
             messages=[
                 {
                     "role": "system",
-                    "content": "You are a helpful assistant specialized in Christmas gift recommendations. Respond clearly and naturally in plain text only. You can use bullet points, numbered lists, and normal formatting to organize information. However, do NOT use bold or italic text formatting. Keep all text in regular font weight. When asked for lists or rankings, be thorough and include ALL relevant items from the context provided."
+                    "content": "You are a Christmas gift recommendation assistant. Respond in plain text only - no bold or italic formatting. Use bullet points and lists for organization. Be thorough and include all relevant information from the context."
                 },
                 {
                     "role": "user",
@@ -465,64 +306,74 @@ def handle_user_input(user_question: str):
         })
 
 # ------------------------------
-# APP TITLE
+# APP HEADER
 # ------------------------------
 st.markdown('<div class="app-title">🎁 GiftxAI</div>', unsafe_allow_html=True)
 st.markdown('<div class="app-subtitle">AI-Powered Christmas Gift Recommendations</div>', unsafe_allow_html=True)
 
 # ------------------------------
-# SIDEBAR: PDF UPLOAD & PROCESS
+# SIDEBAR
 # ------------------------------
 with st.sidebar:
     st.header("📄 Upload Documents")
+    
     uploaded_files = st.file_uploader(
-        "Upload PDF files about Christmas gifts",
+        "Upload PDF files with gift information",
         type=['pdf'],
         accept_multiple_files=True
     )
+    
     if uploaded_files:
         if st.button("Process Documents", type="primary"):
             st.session_state.vectorstore = process_documents(uploaded_files)
     
     if st.session_state.processed_files:
-        st.header("✅ Processed Files")
+        st.subheader("✅ Processed Files")
         for f in st.session_state.processed_files:
             st.markdown(f'<div class="processed-file">📎 {f}</div>', unsafe_allow_html=True)
     
-    if st.button("Clear Conversation"):
+    st.divider()
+    
+    if st.button("🗑️ Clear Conversation"):
         st.session_state.chat_history = []
         st.rerun()
+    
+    # Stats
+    if st.session_state.vectorstore:
+        st.divider()
+        st.caption(f"💬 Messages: {len(st.session_state.chat_history)}")
+        st.caption(f"📚 Files: {len(st.session_state.processed_files)}")
 
 # ------------------------------
 # CHAT INTERFACE
 # ------------------------------
-chat_container = st.container()
-with chat_container:
-    for message in st.session_state.chat_history:
-        with st.chat_message("user"):
-            st.write(message['question'])
-        with st.chat_message("assistant"):
-            st.write(message['answer'])
-            if message.get('sources'):
-                with st.expander("📚 View Sources"):
-                    for j, doc in enumerate(message['sources'][:3]):
-                        st.markdown(f"**Source {j+1}** ({doc.metadata.get('source','Unknown')})")
-                        st.text(doc.page_content[:300]+"...")
+for message in st.session_state.chat_history:
+    with st.chat_message("user"):
+        st.write(message['question'])
+    with st.chat_message("assistant"):
+        st.write(message['answer'])
+        if message.get('sources'):
+            with st.expander("📚 View Sources"):
+                for j, doc in enumerate(message['sources'][:3]):
+                    st.markdown(f"**Source {j+1}** ({doc.metadata.get('source','Unknown')})")
+                    st.text(doc.page_content[:300]+"...")
 
-user_question = st.chat_input("Ask a question about the Christmas gift documents...")
+user_question = st.chat_input("Ask about gifts, pricing, recommendations...")
 if user_question:
     handle_user_input(user_question)
     st.rerun()
 
 # ------------------------------
-# FOOTER: Tips
+# TIPS (First Time)
 # ------------------------------
 if not st.session_state.chat_history:
     st.markdown(
         """
         <div class="tips-box">
-        <strong>💡 How to Use</strong>
-        <p>Upload PDF documents with Christmas gifts info • Ask questions about gifts, pricing, or comparisons • Get AI-powered recommendations based on your documents</p>
+        <strong>💡 Quick Start Guide</strong><br><br>
+        1. Upload PDF catalogs with Christmas gift information<br>
+        2. Ask questions about products, prices, or get recommendations<br>
+        3. The AI retrieves relevant info and provides accurate answers
         </div>
         """,
         unsafe_allow_html=True
