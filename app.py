@@ -103,6 +103,33 @@ def create_document_chunks(text: str, filename: str) -> List[Document]:
     chunks = splitter.split_text(text)
     return [Document(page_content=chunk, metadata={"source": filename, "chunk": i}) for i, chunk in enumerate(chunks)]
 
+def clean_response_formatting(text: str) -> str:
+    """Remove markdown formatting from the response to ensure uniform plain text output"""
+    # Remove bold markers (**text** or __text__)
+    text = re.sub(r'\*\*(.+?)\*\*', r'\1', text)
+    text = re.sub(r'__(.+?)__', r'\1', text)
+    
+    # Remove italic markers (*text* or _text_)
+    text = re.sub(r'\*(.+?)\*', r'\1', text)
+    text = re.sub(r'_(.+?)_', r'\1', text)
+    
+    # Remove headers (# ## ### etc.)
+    text = re.sub(r'^#+\s+', '', text, flags=re.MULTILINE)
+    
+    # Remove strikethrough (~~text~~)
+    text = re.sub(r'~~(.+?)~~', r'\1', text)
+    
+    # Remove inline code (`text`)
+    text = re.sub(r'`(.+?)`', r'\1', text)
+    
+    # Remove code blocks (```text```)
+    text = re.sub(r'```.*?```', '', text, flags=re.DOTALL)
+    
+    # Clean up any extra whitespace
+    text = re.sub(r'\n\s*\n', '\n\n', text)
+    
+    return text.strip()
+
 def process_documents(uploaded_files):
     all_docs = []
     with st.spinner("Processing documents..."):
@@ -147,18 +174,29 @@ Context:
 
 Question: {question}
 
-Answer:"""
+Provide a clear, direct answer in plain text without any formatting such as bold, italics, headers, or special characters. Use simple paragraphs and natural language."""
     try:
         response = groq_client.chat.completions.create(
             model="llama-3.3-70b-versatile",
-            messages=[{"role":"system","content":"You are a helpful assistant specialized in Christmas gift recommendations."},
-                      {"role":"user","content":prompt}],
+            messages=[
+                {
+                    "role": "system",
+                    "content": "You are a helpful assistant specialized in Christmas gift recommendations. Always respond in plain text without using markdown formatting, bold, italics, or special formatting characters. Use clear, simple language in regular paragraphs."
+                },
+                {
+                    "role": "user",
+                    "content": prompt
+                }
+            ],
             temperature=0.7,
             max_tokens=500,
             top_p=1,
             stream=False
         )
-        return response.choices[0].message.content.strip()
+        answer = response.choices[0].message.content.strip()
+        # Clean any remaining formatting
+        answer = clean_response_formatting(answer)
+        return answer
     except Exception as e:
         return f"Error: {str(e)}"
 
@@ -240,4 +278,3 @@ if 'tips_shown' not in st.session_state:
             """,
             unsafe_allow_html=True
         )
-
