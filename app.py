@@ -197,25 +197,46 @@ def create_document_chunks(text: str, filename: str) -> List[Document]:
     return [Document(page_content=chunk, metadata={"source": filename, "chunk": i}) for i, chunk in enumerate(chunks)]
 
 def clean_response_formatting(text: str) -> str:
-    """Remove markdown formatting for uniform text display"""
+    """Remove ALL markdown formatting for completely uniform text display"""
+    # Remove bold (** and __)
     text = re.sub(r'\*\*(.+?)\*\*', r'\1', text)
     text = re.sub(r'__(.+?)__', r'\1', text)
-    text = re.sub(r'^(\s*)[-*•]\s+', r'\1BULLETPOINT ', text, flags=re.MULTILINE)
-    text = re.sub(r'\*(.+?)\*', r'\1', text)
-    text = re.sub(r'_(.+?)_', r'\1', text)
-    text = re.sub(r'BULLETPOINT ', '• ', text)
-    text = re.sub(r':\s*•\s*', ': ', text)
-    text = re.sub(r'([a-zA-Z0-9])\s+•\s+', r'\1, ', text)
+    
+    # Remove italic (* and _) - but preserve bullet points
+    text = re.sub(r'(?<!\w)\*(?!\s)(.+?)(?<!\s)\*(?!\w)', r'\1', text)
+    text = re.sub(r'(?<!\w)_(?!\s)(.+?)(?<!\s)_(?!\w)', r'\1', text)
+    
+    # Handle bullet points carefully
+    text = re.sub(r'^(\s*)[-*•]\s+', r'\1• ', text, flags=re.MULTILINE)
+    
+    # Remove headers (# ## ###)
     text = re.sub(r'^#+\s+', '', text, flags=re.MULTILINE)
+    
+    # Remove strikethrough
     text = re.sub(r'~~(.+?)~~', r'\1', text)
+    
+    # Remove inline code
     text = re.sub(r'`(.+?)`', r'\1', text)
+    
+    # Remove code blocks
     text = re.sub(r'```.*?```', '', text, flags=re.DOTALL)
+    
+    # Fix spacing around prices
     text = re.sub(r'(\$\d+(?:\.\d{2})?)([a-zA-Z])', r'\1 \2', text)
     text = re.sub(r'([a-zA-Z])(\$\d)', r'\1 \2', text)
     text = re.sub(r'(\$\d+(?:\.\d{2})?),([a-zA-Z])', r'\1, \2', text)
     text = re.sub(r'(\$\d+(?:\.\d{2})?)\)([a-zA-Z])', r'\1) \2', text)
+    
+    # Clean up excessive line breaks
     text = re.sub(r'\n\s*\n\s*\n+', '\n\n', text)
+    
+    # Clean up multiple spaces
     text = re.sub(r' +', ' ', text)
+    
+    # Final pass: remove any remaining * or _ that might be formatting
+    text = re.sub(r'\*\*', '', text)
+    text = re.sub(r'__', '', text)
+    
     return text.strip()
 
 def process_documents(uploaded_files):
@@ -297,49 +318,61 @@ def get_relevant_context(question: str, vectorstore, k=8):
 
 def validate_and_reformat_response(initial_response: str, user_question: str, groq_client: Groq) -> str:
     """
-    Validate and ensure the response has proper structure: introduction, body, and conclusion.
+    STAGE 2 VALIDATION: Aggressively ensure the response has proper structure and ZERO markdown formatting.
     """
-    validation_prompt = f"""You are a precision validator. Review this response and ensure it has PROPER STRUCTURE.
+    validation_prompt = f"""You are a STRICT formatting enforcer. Your ONLY job is to remove ALL markdown and ensure plain text.
 
 USER QUESTION: {user_question}
 
 ORIGINAL RESPONSE:
 {initial_response}
 
-VALIDATION RULES:
+CRITICAL FORMATTING RULES - NO EXCEPTIONS:
 
-1. STRUCTURE VERIFICATION:
-   - Must have INTRODUCTION (1-2 sentences acknowledging the question)
-   - Must have BODY (main content - ranking list, bullet points, or detailed answer)
-   - Must have CONCLUSION (1-2 sentences summarizing or closing)
-   
-2. COUNT VERIFICATION (if applicable):
+1. REMOVE ALL MARKDOWN:
+   - NO asterisks for bold (**text**) or italic (*text*)
+   - NO underscores for bold (__text__) or italic (_text_)
+   - NO hash symbols for headers (# ## ###)
+   - NO backticks for code (`code`)
+   - ONLY use bullet points with • symbol or numbers 1. 2. 3.
+
+2. STRUCTURE VERIFICATION:
+   - Must have INTRODUCTION (1-2 sentences)
+   - Must have BODY (main content)
+   - Must have CONCLUSION (1-2 sentences)
+
+3. COUNT VERIFICATION (if ranking):
    - If user asks "top 10", body must have EXACTLY 10 items
-   - If user asks "top 5", body must have EXACTLY 5 items
-   - Remove any extra items beyond the requested count
+   - Remove any extra items beyond requested count
 
-3. FORMAT:
-   - Remove ALL bold, italic, markdown formatting
-   - Use format: "1. Item Name - Price" for rankings
-   - Use bullet points (•) for lists
-   - Consistent spacing and punctuation
+4. CLEAN TEXT ONLY:
+   - Use plain characters only
+   - Bullet points: • 
+   - Numbers: 1. 2. 3.
+   - Prices: $99.99 (dollar sign + number)
+   - NO special formatting whatsoever
 
-4. CONTENT FLOW:
-   - Introduction sets context
-   - Body provides detailed information
-   - Conclusion wraps up with summary or helpful remark
+5. EXAMPLE OF CORRECT OUTPUT:
+   Introduction sentence here.
+   
+   For Your Wife:
+   • Item Name - $99.99 (reason)
+   • Item Name - $149.99 (reason)
+   
+   For Your Kid:
+   • Item Name - $79.99 (reason)
+   
+   Conclusion sentence here.
 
-5. ACCURACY:
-   - Verify items are sorted correctly if it's a ranking
-   - Ensure prices are accurate and properly formatted
-   - Check that all information flows logically
+CRITICAL: Your output must be 100% plain text. If you see ANY asterisks (*), underscores (_), or markdown symbols, you MUST remove them.
 
 OUTPUT REQUIREMENTS:
-- Provide ONLY the corrected response
+- Provide ONLY the cleaned response
+- Absolutely NO markdown formatting
 - Must have: Introduction + Body + Conclusion
-- No explanations about what you changed
+- No explanations
 
-Validate and output the properly structured response now:"""
+Output the cleaned plain text response now:"""
 
     try:
         response = groq_client.chat.completions.create(
@@ -347,32 +380,50 @@ Validate and output the properly structured response now:"""
             messages=[
                 {
                     "role": "system",
-                    "content": """You are a precision editor ensuring proper response structure.
+                    "content": """You are a STRICT plain text enforcer. Your mission is to eliminate ALL markdown formatting.
 
-Rules:
+ABSOLUTE RULES:
+- Remove ALL asterisks used for formatting
+- Remove ALL underscores used for formatting  
+- Remove ALL hash symbols for headers
+- Keep ONLY plain text with bullet points (•) or numbers
 - Every response must have: Introduction, Body, Conclusion
-- Introduction: 1-2 sentences setting context
-- Body: Main content (ranking, details, bullet points)
-- Conclusion: 1-2 sentences summarizing or closing
-- Ensure exact count matches user request for rankings
-- Remove any rambling or extra content
-- Enforce plain text formatting"""
+- Zero tolerance for markdown - if you see *, _, **, __, #, remove them immediately
+
+You output ONLY plain text. No markdown. Ever."""
                 },
                 {
                     "role": "user",
                     "content": validation_prompt
                 }
             ],
-            temperature=0.05,
+            temperature=0.01,  # Extremely low for consistency
             max_tokens=2500,
-            top_p=0.9,
+            top_p=0.85,
             stream=False
         )
         validated_response = response.choices[0].message.content.strip()
+        
+        # AGGRESSIVE cleaning pass - remove any remaining markdown
         validated_response = clean_response_formatting(validated_response)
+        
+        # Extra safety: one more pass to catch stubborn formatting
+        validated_response = re.sub(r'\*\*', '', validated_response)
+        validated_response = re.sub(r'__', '', validated_response)
+        validated_response = re.sub(r'(?<!\w)\*(?!\s)', '', validated_response)
+        validated_response = re.sub(r'(?<!\s)\*(?!\w)', '', validated_response)
+        validated_response = re.sub(r'(?<!\w)_(?!\s)', '', validated_response)
+        validated_response = re.sub(r'(?<!\s)_(?!\w)', '', validated_response)
+        
         return validated_response
     except Exception as e:
-        return clean_response_formatting(initial_response)
+        # If validation fails, apply aggressive cleaning to initial response
+        cleaned = clean_response_formatting(initial_response)
+        cleaned = re.sub(r'\*\*', '', cleaned)
+        cleaned = re.sub(r'__', '', cleaned)
+        cleaned = re.sub(r'(?<!\w)\*', '', cleaned)
+        cleaned = re.sub(r'\*(?!\w)', '', cleaned)
+        return cleaned
 
 def generate_answer(question: str, context: str, groq_client: Groq) -> str:
     """Generate answer using LLM with RAG context - optimized for concise ranking responses"""
@@ -442,8 +493,11 @@ FORMATTING:
 - Use plain text (NO bold/italic/markdown)
 - Clear section headers
 - Include prices and brief reasons
+- CRITICAL: Do NOT use asterisks (*) or underscores (_) for formatting
+- CRITICAL: Do NOT use ** or __ for bold text
+- Use ONLY plain characters and bullet points (•)
 
-Provide your complete recommendation with intro, body, and conclusion:"""
+Provide your complete recommendation with intro, body, and conclusion in PLAIN TEXT ONLY:"""
     
     # Streamlined prompt for ranking queries
     elif is_ranking and requested_count:
@@ -483,13 +537,15 @@ FORMATTING:
 - Plain text only (NO bold, italic, or markdown)
 - Format: "1. Item Name - Price"
 - Prices: dollar sign + amount (e.g., 649.99)
+- CRITICAL: Do NOT use * or _ or ** or __ for any formatting
+- CRITICAL: Use ONLY plain text and numbers
 
 ACCURACY:
 - Double-check sorting is numerical (not alphabetical)
 - Verify count is exactly {requested_count}
 - Use only information from the context
 
-Provide your complete response with intro, ranking, and conclusion:"""
+Provide your complete response with intro, ranking, and conclusion in PLAIN TEXT ONLY:"""
     else:
         # Standard prompt for non-ranking, non-budget queries
         prompt = f"""Answer this question based strictly on the context provided.
@@ -521,9 +577,10 @@ INSTRUCTIONS:
 - Use bullet points or sections when it improves clarity
 - Include relevant details like prices, features, age recommendations
 - Use plain text formatting (NO bold, italic, or markdown)
+- CRITICAL: Do NOT use * _ ** __ for formatting - use ONLY plain text
 - If context lacks information, state this clearly but offer what you can
 
-Provide a complete response with introduction, body, and conclusion:"""
+Provide a complete response with introduction, body, and conclusion in PLAIN TEXT ONLY:"""
     
     try:
         response = groq_client.chat.completions.create(
@@ -532,6 +589,12 @@ Provide a complete response with introduction, body, and conclusion:"""
                 {
                     "role": "system",
                     "content": """You are a thoughtful, personable gift recommendation assistant.
+
+CRITICAL FORMATTING RULE: Output ONLY plain text - absolutely NO markdown formatting.
+- NEVER use asterisks (*) for italic or bold
+- NEVER use underscores (_) for italic or bold  
+- NEVER use ** or __ for bold text
+- Use ONLY plain characters, bullet points (•), and numbers (1. 2. 3.)
 
 CRITICAL: Every response must have THREE parts:
 1. INTRODUCTION (1-2 sentences) - Set context and acknowledge the question
@@ -553,7 +616,7 @@ For general queries:
 - Body: Organized information with details
 - Conclusion: Summary or recommendation
 
-Always use plain text - NO markdown formatting."""
+Remember: Output plain text ONLY. No asterisks, no underscores for formatting."""
                 },
                 {
                     "role": "user",
@@ -567,8 +630,19 @@ Always use plain text - NO markdown formatting."""
         )
         initial_answer = response.choices[0].message.content.strip()
         
-        # Validation step with question context
+        # STAGE 1: Initial cleaning
+        initial_answer = clean_response_formatting(initial_answer)
+        
+        # STAGE 2: Validation and aggressive re-formatting
         validated_answer = validate_and_reformat_response(initial_answer, question, groq_client)
+        
+        # STAGE 3: Final safety pass - nuclear option to remove ALL remaining markdown
+        validated_answer = re.sub(r'\*\*(.+?)\*\*', r'\1', validated_answer)  # Bold
+        validated_answer = re.sub(r'__(.+?)__', r'\1', validated_answer)      # Bold
+        validated_answer = re.sub(r'(?<!\w)\*(.+?)\*(?!\w)', r'\1', validated_answer)  # Italic
+        validated_answer = re.sub(r'(?<!\w)_(.+?)_(?!\w)', r'\1', validated_answer)    # Italic
+        validated_answer = re.sub(r'\*\*', '', validated_answer)  # Stray **
+        validated_answer = re.sub(r'__', '', validated_answer)    # Stray __
         
         return validated_answer
     except Exception as e:
