@@ -372,87 +372,119 @@ You have a keen eye for detail and ensure every response meets the highest stand
         return clean_response_formatting(initial_response)
 
 def generate_answer(question: str, context: str, groq_client: Groq) -> str:
-    """Generate answer using LLM with RAG context"""
-    
-    # Enhanced prompt with explicit reasoning and ordering instructions
-    prompt = f"""You are an expert gift recommendation assistant. Answer the question based STRICTLY on the context provided.
+    """Generate enterprise-grade answer using strict RAG discipline"""
+
+    master_prompt = f"""
+You are an enterprise-grade Retrieval-Augmented Generation (RAG) answer engine.
+
+Your role is to generate precise, verifiable, and well-structured answers using ONLY the information provided in the retrieved context. You must not rely on prior knowledge, assumptions, or external data.
+
+====================
+INPUTS
+====================
 
 Context:
 {context}
 
-Question: {question}
+User Question:
+{question}
 
-CRITICAL INSTRUCTIONS:
-1. ANALYZE the question carefully - if it asks for "top 10", "most expensive", "in order", "ranking", or similar:
-   - Extract ALL relevant items with prices from the context
-   - Sort them numerically by price (highest to lowest for "most expensive", lowest to highest for "cheapest")
-   - Present EXACTLY the number requested (e.g., top 10 means exactly 10 items)
-   - Use this format: "1. Item Name - Price"
+====================
+MANDATORY REASONING STEPS (INTERNAL)
+====================
 
-2. For comparison or listing questions:
-   - Be comprehensive and include ALL relevant items from context
-   - Organize logically (by price, category, age group, etc.)
-   - Use clear numbering (1. 2. 3.) or bullet points (•)
+Before producing the final answer, you must internally perform the following steps in order:
 
-3. For general questions:
-   - Provide clear, structured answers
-   - Cite specific details and prices when available
-   - If context lacks information, state this clearly
+1. QUESTION CLASSIFICATION
+   - Determine whether the question is:
+     a) Ranking or ordering (top N, most expensive, cheapest, highest, lowest)
+     b) Listing or enumeration
+     c) Comparison
+     d) Direct factual lookup
+     e) General explanatory question
 
-4. FORMATTING RULES (STRICTLY ENFORCE):
-   - Use ONLY plain text - NO bold, italic, or special markdown
-   - Use simple bullet points (•) or numbers (1. 2. 3.)
-   - Maintain consistent spacing
-   - Keep prices in format: dollar sign + amount (e.g., 649.99)
+2. INFORMATION EXTRACTION
+   - Extract ALL relevant entities, items, names, prices, quantities, and attributes from the context
+   - Ignore irrelevant or duplicate information
+   - Do not invent missing values
 
-5. ACCURACY:
-   - Double-check all prices and details against the context
-   - Do not invent or assume information not in the context
-   - If unsure, acknowledge limitations
+3. VALIDATION
+   - If the question asks for a specific count (e.g., top 10), ensure EXACTLY that number is returned
+   - If the context does not contain enough information, clearly state the limitation
 
-Think step-by-step before answering. First identify what type of answer is needed, then extract and organize the relevant information."""
-    
+4. ORDERING AND SORTING (IF APPLICABLE)
+   - Perform NUMERICAL sorting where required
+     • Highest to lowest for "most expensive", "top", "highest"
+     • Lowest to highest for "cheapest", "lowest"
+   - Never sort alphabetically unless explicitly requested
+
+====================
+STRICT OUTPUT RULES (NON-NEGOTIABLE)
+====================
+
+Formatting:
+- Output MUST be plain text only
+- DO NOT use bold, italics, underlines, markdown, LaTeX, emojis, or special formatting
+- Use ONLY:
+  • Numbered lists: 1. 2. 3.
+  • Bullet points: •
+
+Prices and Numbers:
+- Prices must be formatted consistently: $amount (example: $649.99)
+
+Content Rules:
+- Do NOT hallucinate or infer missing information
+- Do NOT include meta-commentary or explanations
+- If information is insufficient, state this clearly in one sentence
+
+====================
+ANSWER CONSTRUCTION
+====================
+
+Produce the final answer that:
+- Fully answers the user’s question
+- Is logically ordered and easy to scan
+- Is accurate, complete, and grounded ONLY in the context
+
+Return ONLY the final answer.
+"""
+
     try:
-        # First response generation with enhanced model
         response = groq_client.chat.completions.create(
             model="llama-3.3-70b-versatile",
             messages=[
                 {
                     "role": "system",
-                    "content": """You are a highly analytical AI assistant specializing in Christmas gift recommendations. 
-
-Your core competencies:
-- Precise data extraction and analysis from context
-- Accurate numerical sorting and ranking
-- Clear, structured presentation of information
-- Strict adherence to plain text formatting (no bold, italic, or markdown)
-
-When handling queries about "most expensive", "top 10", "in order", or rankings:
-1. Extract ALL relevant items with prices
-2. Sort numerically (not alphabetically)
-3. Present in the exact order and quantity requested
-4. Use format: "1. Item Name - Price"
-
-Be thorough, accurate, and analytical. Always verify your sorting and counting before responding."""
+                    "content": (
+                        "You are a strict enterprise RAG execution engine. "
+                        "You follow instructions exactly, do not hallucinate, "
+                        "and always return clean plain text output."
+                    )
                 },
                 {
                     "role": "user",
-                    "content": prompt
+                    "content": master_prompt
                 }
             ],
-            temperature=0.1,  # Lower temperature for more precise, analytical responses
-            max_tokens=2000,  # Increased for comprehensive answers
-            top_p=0.95,
+            temperature=0.08,   # Low for deterministic, audit-safe output
+            max_tokens=2000,
+            top_p=0.9,
             stream=False
         )
+
         initial_answer = response.choices[0].message.content.strip()
-        
-        # Validation step: double-check and reformat the response
-        validated_answer = validate_and_reformat_response(initial_answer, groq_client)
-        
+
+        # Second-pass validation (you already implemented this correctly)
+        validated_answer = validate_and_reformat_response(
+            initial_answer,
+            groq_client
+        )
+
         return validated_answer
+
     except Exception as e:
         return f"Error generating response: {str(e)}"
+
 
 def handle_user_input(user_question: str):
     """Handle user query with metrics tracking"""
