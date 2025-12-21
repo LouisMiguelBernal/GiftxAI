@@ -1,11 +1,3 @@
-"""
-State-of-the-Art RAG System - Complete Implementation
-======================================================
-
-Complete Streamlit application with advanced prompting techniques used by
-Claude, GPT-4, and Gemini.
-"""
-
 import streamlit as st
 import re
 import os
@@ -141,6 +133,9 @@ if 'metrics' not in st.session_state:
         'total_chunks': 0
     }
 
+# ------------------------------
+# HELPER FUNCTIONS
+# ------------------------------
 def clean_extracted_text(text: str) -> str:
     """Clean extracted text while preserving important spacing"""
     text = re.sub(r' +', ' ', text)
@@ -331,10 +326,88 @@ def get_relevant_context_enhanced(question: str, vectorstore, k=8) -> Tuple[str,
     
     return context, docs, k, query_type
 
+def validate_and_enhance_response(initial_response: str, original_question: str, groq_client: Groq) -> str:
+    """Advanced validation that ensures quality while preserving natural language"""
+    
+    validation_prompt = f"""You are a quality assurance specialist for AI responses. Review and enhance this response while maintaining its natural, helpful tone.
+
+ORIGINAL QUESTION:
+{original_question}
+
+GENERATED RESPONSE:
+{initial_response}
+
+====================
+VALIDATION CHECKLIST
+====================
+
+1. ACCURACY & COMPLETENESS
+   ✓ Does it fully answer the question?
+   ✓ Are all numbers, prices, and facts correct?
+   ✓ Is the information logically consistent?
+   ✓ For rankings/lists: Is the ordering correct?
+
+2. NATURAL LANGUAGE QUALITY
+   ✓ Does it sound natural and conversational?
+   ✓ Is it helpful without being robotic?
+   ✓ Does it show understanding of user intent?
+   ✓ Is the tone appropriate and engaging?
+
+3. FORMATTING CONSISTENCY
+   ✓ Plain text only (no markdown/bold/italic)
+   ✓ Prices formatted consistently: $amount
+   ✓ Appropriate use of lists vs. paragraphs
+   ✓ Clean spacing and structure
+
+4. RESPONSE INTELLIGENCE
+   ✓ Provides context for numbers and facts
+   ✓ Acknowledges limitations naturally if any
+   ✓ Adds helpful insights beyond raw data
+   ✓ Appropriate level of detail
+
+====================
+YOUR TASK
+====================
+
+If the response meets all criteria: Return it as-is (with only format cleaning if needed).
+
+If improvements are needed: Enhance the response while:
+- Keeping all factual information accurate
+- Maintaining a natural, helpful tone
+- Ensuring proper formatting
+- Preserving the conversational quality
+
+OUTPUT: Provide ONLY the final, validated response. No explanations or meta-commentary."""
+
+    try:
+        response = groq_client.chat.completions.create(
+            model="llama-3.3-70b-versatile",
+            messages=[
+                {
+                    "role": "system",
+                    "content": "You are a meticulous quality assurance specialist who ensures AI responses are accurate, natural, and helpful. You maintain high standards while preserving the conversational quality that makes responses engaging."
+                },
+                {
+                    "role": "user",
+                    "content": validation_prompt
+                }
+            ],
+            temperature=0.1,
+            max_tokens=2500,
+            top_p=0.9,
+            stream=False
+        )
+        
+        validated_response = response.choices[0].message.content.strip()
+        validated_response = clean_response_formatting(validated_response)
+        
+        return validated_response
+        
+    except Exception as e:
+        return clean_response_formatting(initial_response)
+
 def generate_answer(question: str, context: str, groq_client: Groq) -> str:
-    """
-    State-of-the-art answer generation with advanced reasoning and natural language quality
-    """
+    """State-of-the-art answer generation with advanced reasoning and natural language quality"""
 
     master_prompt = f"""You are an advanced AI assistant specializing in gift recommendations and product information. You combine the analytical precision of enterprise systems with the natural helpfulness of conversational AI.
 
