@@ -12,9 +12,9 @@ from langchain.schema import Document
 from groq import Groq
 import time
 
-# ------------------------------
+
 # APP CONFIGURATION
-# ------------------------------
+
 st.set_page_config(
     page_title="GiftxAI - Enterprise RAG System",
     page_icon="🎁",
@@ -22,9 +22,7 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# ------------------------------
-# MINIMAL THEME-AGNOSTIC CSS
-# ------------------------------
+# CSS styling
 st.markdown("""
     <style>
     :root {
@@ -130,9 +128,7 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# ------------------------------
 # INITIALIZE SESSION STATE
-# ------------------------------
 if 'groq_client' not in st.session_state or st.session_state.groq_client is None:
     try:
         st.session_state.groq_client = Groq(api_key=st.secrets["GROQ_API_KEY"])
@@ -155,9 +151,7 @@ if 'metrics' not in st.session_state:
         'total_chunks': 0
     }
 
-# ------------------------------
 # HELPER FUNCTIONS
-# ------------------------------
 def clean_extracted_text(text: str) -> str:
     """Clean extracted text while preserving important spacing"""
     text = re.sub(r' +', ' ', text)
@@ -578,15 +572,11 @@ def handle_user_input(user_question: str):
         'timestamp': datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     })
 
-# ------------------------------
 # APP HEADER
-# ------------------------------
 st.markdown('<div class="app-title">🎁 <span class="gift-text">Gift</span><span class="xai-text">xAI</span></div>', unsafe_allow_html=True)
 st.markdown('<div class="app-subtitle">Smart Gifts, Perfectly Timed.</div>', unsafe_allow_html=True)
 
-# ------------------------------
 # SIDEBAR
-# ------------------------------
 with st.sidebar:
     st.header("📄 Document Management")
     
@@ -654,9 +644,7 @@ with st.sidebar:
         - Sorting: Enhanced numerical ordering
         """)
 
-# ------------------------------
 # CHAT INTERFACE
-# ------------------------------
 for idx, message in enumerate(st.session_state.chat_history):
     with st.chat_message("user"):
         st.write(message['question'])
@@ -686,9 +674,7 @@ if user_question:
     handle_user_input(user_question)
     st.rerun()
 
-# ------------------------------
 # INFO SECTION
-# ------------------------------
 if not st.session_state.chat_history:
     st.markdown(
         """
@@ -702,3 +688,4 @@ if not st.session_state.chat_history:
         """,
         unsafe_allow_html=True
     )
+
