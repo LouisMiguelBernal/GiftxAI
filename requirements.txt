@@ -1,20 +1,23 @@
-# Streamlit
-streamlit==1.31.0
+# Interface — enough on its own to run the app and see the UI.
+streamlit>=1.40
 
-# LangChain
-langchain
-langchain-community
+# Retrieval stack.
+# LangChain 1.x split the monolith apart, so the pieces are named explicitly.
+# app.py falls back to the pre-1.0 import paths if it finds those instead.
+langchain-core>=0.3
+langchain-text-splitters>=0.3
+langchain-community>=0.3
+langchain-huggingface>=0.1
+faiss-cpu>=1.8
+pypdf>=4.2
 
-# PDF & Vectorstore
-pypdf
-faiss-cpu
+# Embeddings.
+# sentence-transformers must stay >=2.7: earlier pins together with
+# huggingface-hub<0.20 break on the removed `cached_download` symbol.
+sentence-transformers>=2.7
+transformers>=4.40
+huggingface-hub>=0.23
+torch>=2.2
 
-# Embeddings
-sentence-transformers==2.2.2
-transformers
-torch==2.9.1
-huggingface-hub==0.16.4
-
-# API
-groq
-httpx
+# Inference
+groq>=0.11

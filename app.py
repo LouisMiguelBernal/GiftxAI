@@ -1,691 +1,593 @@
-import streamlit as st
-import re
-import os
-import tempfile
-from typing import List
-from datetime import datetime
-from pypdf import PdfReader
-from langchain.text_splitter import RecursiveCharacterTextSplitter
-from langchain_community.vectorstores import FAISS
-from langchain_community.embeddings import HuggingFaceEmbeddings
-from langchain.schema import Document
-from groq import Groq
-import time
+"""
+GiftxAI — retrieval-augmented gift recommendation over your own PDF catalogues.
 
+FAISS retrieval, a grounded answer pass, and optional validation passes on a
+Groq-hosted Llama 3.3 backbone.
 
-# APP CONFIGURATION
-
-st.set_page_config(
-    page_title="GiftxAI - Enterprise RAG System",
-    page_icon="🎁",
-    layout="wide",
-    initial_sidebar_state="expanded"
-)
-
-# CSS styling
-st.markdown("""
-    <style>
-    :root {
-        --accent-red: #C41E3A;
-        --accent-green: #165B33;
-    }
-    
-    .app-title {
-        font-size: 48px;
-        font-weight: 700;
-        text-align: center;
-        margin-bottom: 8px;
-    }
-    
-    .app-title .gift-text {
-        color: var(--accent-red);
-    }
-    
-    .app-title .xai-text {
-        color: var(--accent-green);
-    }
-    
-    .app-subtitle {
-        text-align: center;
-        color: #FFB703;
-        font-size: 18px;
-        font-weight: 500;
-        margin-bottom: 24px;
-    }
-    
-    /* Force uniform text */
-    [data-testid="stChatMessage"] p,
-    [data-testid="stChatMessage"] span,
-    [data-testid="stChatMessage"] div,
-    [data-testid="stChatMessage"] li,
-    [data-testid="stChatMessage"] ul,
-    [data-testid="stChatMessage"] ol,
-    [data-testid="stChatMessage"] strong,
-    [data-testid="stChatMessage"] em,
-    [data-testid="stChatMessage"] b,
-    [data-testid="stChatMessage"] i {
-        font-weight: 400 !important;
-        font-style: normal !important;
-    }
-    
-    [data-testid="stChatMessage"][data-testid*="user"] {
-        background-color: var(--accent-red);
-        opacity: 0.9;
-    }
-    
-    [data-testid="stChatMessage"][data-testid*="assistant"] {
-        border-left: 4px solid var(--accent-green);
-    }
-    
-    .stButton > button[kind="primary"] {
-        background-color: var(--accent-red);
-        font-weight: 600;
-        border-radius: 8px;
-        height: 48px;
-    }
-    
-    .stButton > button[kind="primary"]:hover {
-        background-color: #A01729;
-    }
-    
-    .metric-card {
-        padding: 1rem;
-        border-radius: 8px;
-        border-left: 4px solid var(--accent-green);
-        margin: 0.5rem 0;
-    }
-    
-    .tips-box {
-        background: linear-gradient(135deg, var(--accent-red), var(--accent-green));
-        color: white;
-        padding: 1.5rem;
-        border-radius: 12px;
-        text-align: center;
-        margin-top: 2rem;
-    }
-    
-    .features-row {
-        display: flex;
-        justify-content: space-around;
-        align-items: center;
-        gap: 2rem;
-        margin-top: 1rem;
-    }
-    
-    .feature-item {
-        flex: 1;
-        text-align: center;
-    }
-    
-    .feature-badge {
-        display: inline-block;
-        padding: 0.3rem 0.8rem;
-        border-radius: 12px;
-        font-size: 0.85rem;
-        font-weight: 600;
-        margin: 0.2rem;
-    }
-    </style>
-""", unsafe_allow_html=True)
-
-# INITIALIZE SESSION STATE
-if 'groq_client' not in st.session_state or st.session_state.groq_client is None:
-    try:
-        st.session_state.groq_client = Groq(api_key=st.secrets["GROQ_API_KEY"])
-        st.session_state.groq_client.models.list()
-    except Exception as e:
-        st.error(f"❌ Error: {str(e)}")
-        st.session_state.groq_client = None
-
-if 'chat_history' not in st.session_state:
-    st.session_state.chat_history = []
-if 'vectorstore' not in st.session_state:
-    st.session_state.vectorstore = None
-if 'processed_files' not in st.session_state:
-    st.session_state.processed_files = []
-if 'metrics' not in st.session_state:
-    st.session_state.metrics = {
-        'total_queries': 0,
-        'total_documents': 0,
-        'avg_response_time': 0,
-        'total_chunks': 0
-    }
-
-# HELPER FUNCTIONS
-def clean_extracted_text(text: str) -> str:
-    """Clean extracted text while preserving important spacing"""
-    text = re.sub(r' +', ' ', text)
-    text = re.sub(r'\$(\d+(?:\.\d{2})?)', r'$\1 ', text)
-    text = re.sub(r'([a-zA-Z])(\$\d)', r'\1 \2', text)
-    text = re.sub(r'\n\s*\n+', '\n\n', text)
-    text = '\n'.join(line.strip() for line in text.split('\n'))
-    text = re.sub(r' +', ' ', text)
-    return text.strip()
-
-def extract_text_from_pdf(pdf_file) -> str:
-    """Extract text from PDF with error handling"""
-    try:
-        pdf_reader = PdfReader(pdf_file)
-        text = "".join([page.extract_text() for page in pdf_reader.pages])
-        return text
-    except Exception as e:
-        st.error(f"Error reading PDF: {str(e)}")
-        return ""
-
-def is_christmas_related(text: str) -> bool:
-    """Check if document content is relevant to domain"""
-    keywords = ['christmas', 'xmas', 'gift', 'present', 'holiday', 
-                'santa', 'festive', 'celebration', 'december', 'winter',
-                'toy', 'decoration', 'tree', 'wrapping', 'seasonal']
-    return any(word in text.lower() for word in keywords)
-
-def create_document_chunks(text: str, filename: str) -> List[Document]:
-    """Split documents into optimized chunks for retrieval"""
-    splitter = RecursiveCharacterTextSplitter(
-        chunk_size=800,
-        chunk_overlap=150,
-        length_function=len,
-        separators=["\n\n", "\n", ". ", " ", ""]
-    )
-    chunks = splitter.split_text(text)
-    return [Document(page_content=chunk, metadata={"source": filename, "chunk": i}) for i, chunk in enumerate(chunks)]
-
-def clean_response_formatting(text: str) -> str:
-    """Remove markdown formatting for uniform text display"""
-    text = re.sub(r'\*\*(.+?)\*\*', r'\1', text)
-    text = re.sub(r'__(.+?)__', r'\1', text)
-    text = re.sub(r'^(\s*)[-*•]\s+', r'\1BULLETPOINT ', text, flags=re.MULTILINE)
-    text = re.sub(r'\*(.+?)\*', r'\1', text)
-    text = re.sub(r'_(.+?)_', r'\1', text)
-    text = re.sub(r'BULLETPOINT ', '• ', text)
-    text = re.sub(r':\s*•\s*', ': ', text)
-    text = re.sub(r'([a-zA-Z0-9])\s+•\s+', r'\1, ', text)
-    text = re.sub(r'^#+\s+', '', text, flags=re.MULTILINE)
-    text = re.sub(r'~~(.+?)~~', r'\1', text)
-    text = re.sub(r'`(.+?)`', r'\1', text)
-    text = re.sub(r'```.*?```', '', text, flags=re.DOTALL)
-    text = re.sub(r'(\$\d+(?:\.\d{2})?)([a-zA-Z])', r'\1 \2', text)
-    text = re.sub(r'([a-zA-Z])(\$\d)', r'\1 \2', text)
-    text = re.sub(r'(\$\d+(?:\.\d{2})?),([a-zA-Z])', r'\1, \2', text)
-    text = re.sub(r'(\$\d+(?:\.\d{2})?)\)([a-zA-Z])', r'\1) \2', text)
-    text = re.sub(r'\n\s*\n\s*\n+', '\n\n', text)
-    text = re.sub(r' +', ' ', text)
-    return text.strip()
-
-def process_documents(uploaded_files):
-    """Process and index uploaded documents"""
-    all_docs = []
-    progress_bar = st.progress(0)
-    status_text = st.empty()
-    
-    for idx, uploaded_file in enumerate(uploaded_files):
-        status_text.text(f"Processing {uploaded_file.name}...")
-        progress_bar.progress((idx + 1) / len(uploaded_files))
-        
-        with tempfile.NamedTemporaryFile(delete=False, suffix='.pdf') as tmp_file:
-            tmp_file.write(uploaded_file.getvalue())
-            tmp_path = tmp_file.name
-        
-        text = extract_text_from_pdf(tmp_path)
-        text = clean_extracted_text(text)
-        os.unlink(tmp_path)
-        
-        if not text:
-            st.warning(f"⚠️ No text extracted from {uploaded_file.name}")
-            continue
-        
-        if not is_christmas_related(text):
-            st.warning(f"⚠️ {uploaded_file.name} may not be domain-relevant")
-        
-        docs = create_document_chunks(text, uploaded_file.name)
-        all_docs.extend(docs)
-        st.session_state.processed_files.append(uploaded_file.name)
-    
-    progress_bar.empty()
-    status_text.empty()
-    
-    if not all_docs:
-        st.error("❌ No valid documents to process")
-        return None
-    
-    with st.spinner("Creating vector embeddings..."):
-        embeddings = HuggingFaceEmbeddings(
-            model_name="all-MiniLM-L6-v2",
-            model_kwargs={'device': 'cpu'},
-            encode_kwargs={'normalize_embeddings': True}
-        )
-    
-    if st.session_state.vectorstore is None:
-        vectorstore = FAISS.from_documents(all_docs, embeddings)
-    else:
-        st.session_state.vectorstore.add_documents(all_docs)
-        vectorstore = st.session_state.vectorstore
-    
-    # Update metrics
-    st.session_state.metrics['total_documents'] = len(st.session_state.processed_files)
-    st.session_state.metrics['total_chunks'] = len(all_docs)
-    
-    st.success(f"✅ Successfully indexed {len(uploaded_files)} document(s) into {len(all_docs)} chunks")
-    return vectorstore
-
-def get_relevant_context(question: str, vectorstore, k=8):
-    """Intelligent retrieval with adaptive context window"""
-    power_keywords = ['top', 'most', 'best', 'all', 'list', 'expensive', 
-                      'cheapest', 'compare', 'ranking', 'every', 'entire',
-                      'order', 'sorted', 'ranked', 'highest', 'lowest']
-    
-    # Adaptive retrieval based on query complexity
-    # Increase retrieval for ranking/comparison queries
-    if any(word in question.lower() for word in power_keywords):
-        k = 30  # Increased from 20 to 30 for better coverage
-    
-    # For very specific ranking queries (top 10, top 5, etc.)
-    import re
-    top_n_match = re.search(r'top\s+(\d+)', question.lower())
-    if top_n_match:
-        requested_count = int(top_n_match.group(1))
-        # Retrieve significantly more chunks to ensure we have enough items
-        k = max(40, requested_count * 4)  # 4x multiplier instead of 2x
-    
-    docs = vectorstore.similarity_search(question, k=k)
-    
-    # Deduplicate and consolidate information by item name
-    seen_items = {}
-    unique_docs = []
-    
-    for doc in docs:
-        content = doc.page_content
-        # Extract potential item names (simple heuristic)
-        lines = content.split('\n')
-        item_key = lines[0][:50] if lines else content[:50]
-        
-        if item_key not in seen_items:
-            seen_items[item_key] = doc
-            unique_docs.append(doc)
-    
-    context = "\n\n".join([doc.page_content for doc in unique_docs])
-    
-    return context, unique_docs, k
-
-def validate_and_reformat_response(initial_response: str, groq_client: Groq, iteration: int = 1) -> str:
-    """
-    Triple-check validation system with progressively stricter checking.
-    Each iteration verifies accuracy, formatting, and numerical ordering.
-    """
-    validation_prompt = f"""You are a quality assurance validator (ITERATION {iteration}/3). Review and reformat the following response.
-
-ORIGINAL RESPONSE:
-{initial_response}
-
-YOUR VALIDATION TASKS:
-1. VERIFY ACCURACY:
-   - Check if ALL items are extracted from context
-   - Ensure prices are correctly associated with items
-   - Confirm lists are in STRICT NUMERICAL ORDER (highest to lowest for "expensive", lowest to highest for "cheapest")
-   - Verify the count matches EXACTLY (e.g., "top 10" must have EXACTLY 10 items, no more, no less)
-   - Check for duplicate items (remove duplicates, keep highest price if ambiguous)
-
-2. VERIFY NUMERICAL SORTING:
-   - For "most expensive" or "top" queries: MUST be sorted from HIGHEST to LOWEST price
-   - For "cheapest" or "lowest" queries: MUST be sorted from LOWEST to HIGHEST price
-   - Double-check EVERY single number is in correct order
-   - If ANY item is out of order, RE-SORT the entire list
-
-3. ENFORCE STRICT FORMATTING:
-   - Remove ALL bold text (no ** or __)
-   - Remove ALL italic text (no * or _)
-   - Remove ALL markdown and special formatting
-   - Use numbered lists (1. 2. 3.) for rankings
-   - Format prices consistently: $amount (e.g., $649.99)
-   - Maintain uniform spacing
-
-4. ENSURE CLARITY:
-   - Keep logical organization and structure
-   - Preserve all factual information exactly
-   - Use clean, readable plain text formatting
-   - Remove any redundant or confusing elements
-
-5. CRITICAL VERIFICATION (ITERATION {iteration}):
-   {"- FIRST PASS: Extract all items and prices, verify completeness" if iteration == 1 else ""}
-   {"- SECOND PASS: Verify numerical ordering is PERFECT, check for any sorting errors" if iteration == 2 else ""}
-   {"- FINAL PASS: Triple-check sorting, counts, and formatting are all correct" if iteration == 3 else ""}
-
-OUTPUT REQUIREMENTS:
-- Provide ONLY the validated, reformatted response
-- No explanations or meta-commentary
-- Plain text with consistent formatting throughout
-- PERFECT numerical ordering
-
-Validate and output the corrected response now."""
-
-    try:
-        response = groq_client.chat.completions.create(
-            model="llama-3.3-70b-versatile",
-            messages=[
-                {
-                    "role": "system",
-                    "content": f"""You are a precision quality assurance validator (Pass {iteration}/3). 
-
-Your responsibilities:
-1. Verify accuracy and completeness of information
-2. Ensure PERFECT numerical sorting in rankings (this is CRITICAL)
-3. Enforce strict plain text formatting (no markdown)
-4. Maintain data integrity while improving clarity
-5. Format prices consistently throughout
-6. Verify exact counts match requirements
-
-You have a keen eye for detail and catch even subtle sorting errors. You are thorough and methodical."""
-                },
-                {
-                    "role": "user",
-                    "content": validation_prompt
-                }
-            ],
-            temperature=0.01,  # Extremely low temperature for maximum accuracy
-            max_tokens=2500,
-            top_p=0.85,
-            stream=False
-        )
-        validated_response = response.choices[0].message.content.strip()
-        validated_response = clean_response_formatting(validated_response)
-        return validated_response
-    except Exception as e:
-        return clean_response_formatting(initial_response)
-
-def generate_answer(question: str, context: str, groq_client: Groq) -> str:
-    """Generate enterprise-grade answer using strict RAG discipline with triple validation"""
-
-    master_prompt = f"""
-You are an enterprise-grade Retrieval-Augmented Generation (RAG) answer engine with ENHANCED ACCURACY.
-
-Your role is to generate precise, verifiable, and well-structured answers using ONLY the information provided in the retrieved context. You must not rely on prior knowledge, assumptions, or external data.
-
-====================
-INPUTS
-====================
-
-Context:
-{context}
-
-User Question:
-{question}
-
-====================
-MANDATORY REASONING STEPS (INTERNAL)
-====================
-
-Before producing the final answer, you must internally perform the following steps in order:
-
-1. QUESTION CLASSIFICATION
-   - Determine whether the question is:
-     a) Ranking or ordering (top N, most expensive, cheapest, highest, lowest)
-     b) Listing or enumeration
-     c) Comparison
-     d) Direct factual lookup
-     e) General explanatory question
-
-2. COMPREHENSIVE INFORMATION EXTRACTION
-   - Extract ALL relevant entities, items, names, prices, quantities, and attributes from the context
-   - Create a complete list of ALL items with their prices
-   - Handle duplicates: if same item appears multiple times, use the most complete information
-   - Ignore irrelevant or unrelated information
-   - Do not invent missing values
-
-3. VALIDATION AND DEDUPLICATION
-   - Remove duplicate items (keep the most accurate price)
-   - If the question asks for a specific count (e.g., top 10), ensure EXACTLY that number is returned
-   - If the context does not contain enough information, clearly state the limitation
-
-4. CRITICAL: NUMERICAL SORTING (IF APPLICABLE)
-   - For "most expensive", "top", "highest", "best" queries:
-     * Sort items from HIGHEST price to LOWEST price
-     * Verify EVERY number is in descending order
-   - For "cheapest", "lowest", "least expensive" queries:
-     * Sort items from LOWEST price to HIGHEST price
-     * Verify EVERY number is in ascending order
-   - NEVER sort alphabetically unless explicitly requested
-   - Double-check your sorting - this is the most common error
-
-5. FINAL VERIFICATION
-   - Count the items: does it match the requested number?
-   - Check the order: is every price in the correct sequence?
-   - Verify completeness: are all items from context included?
-
-====================
-STRICT OUTPUT RULES (NON-NEGOTIABLE)
-====================
-
-Formatting:
-- Output MUST be plain text only
-- DO NOT use bold, italics, underlines, markdown, LaTeX, emojis, or special formatting
-- Use ONLY:
-  • Numbered lists: 1. 2. 3.
-  • Bullet points: •
-
-Prices and Numbers:
-- Prices must be formatted consistently: $amount (example: $649.99)
-- ALWAYS include the dollar sign
-
-Content Rules:
-- Do NOT hallucinate or infer missing information
-- Do NOT include meta-commentary or explanations
-- If information is insufficient, state this clearly in one sentence
-
-Sorting Rules (CRITICAL):
-- For "expensive/highest" queries: list items from HIGHEST to LOWEST price
-- For "cheapest/lowest" queries: list items from LOWEST to HIGHEST price
-- Verify your sorting multiple times before outputting
-
-====================
-ANSWER CONSTRUCTION
-====================
-
-Produce the final answer that:
-- Fully answers the user's question
-- Is sorted in the CORRECT numerical order
-- Contains the EXACT number of items requested
-- Is accurate, complete, and grounded ONLY in the context
-
-Return ONLY the final answer.
+Run:  streamlit run app.py
 """
 
+from __future__ import annotations
+
+import os
+import re
+import tempfile
+import time
+from datetime import datetime
+from typing import Any
+
+import streamlit as st
+
+import theme
+
+st.set_page_config(
+    page_title="GiftxAI — Grounded Gift Recommendations",
+    page_icon="🎁",
+    layout="wide",
+    initial_sidebar_state="expanded",
+)
+
+P = theme.apply("giftxai")
+
+MODEL = "llama-3.3-70b-versatile"
+EMBED_MODEL = "all-MiniLM-L6-v2"
+
+
+# ---------------------------------------------------------------------------
+# Optional heavy dependencies
+# ---------------------------------------------------------------------------
+# The RAG stack (torch, sentence-transformers, faiss) is a large install. Import
+# it lazily so the interface still renders — and explains itself — on a machine
+# that only has streamlit.
+
+@st.cache_resource(show_spinner=False)
+def rag_backend() -> tuple[Any | None, str]:
+    # LangChain 1.x split the monolith apart: `langchain.schema` and
+    # `langchain.text_splitter` are gone. Try the current homes first and fall
+    # back to the legacy ones so the app works on either generation.
     try:
-        response = groq_client.chat.completions.create(
-            model="llama-3.3-70b-versatile",
-            messages=[
-                {
-                    "role": "system",
-                    "content": (
-                        "You are a strict enterprise RAG execution engine with enhanced accuracy. "
-                        "You follow instructions exactly, do not hallucinate, "
-                        "perform perfect numerical sorting, "
-                        "and always return clean plain text output. "
-                        "You are especially careful with ranking and ordering queries."
-                    )
-                },
-                {
-                    "role": "user",
-                    "content": master_prompt
-                }
-            ],
-            temperature=0.01,   # Extremely low for maximum determinism
-            max_tokens=2500,    # Increased for comprehensive answers
-            top_p=0.85,
-            stream=False
-        )
+        try:
+            from langchain_core.documents import Document
+            from langchain_text_splitters import RecursiveCharacterTextSplitter
+        except ImportError:
+            from langchain.schema import Document
+            from langchain.text_splitter import RecursiveCharacterTextSplitter
 
-        initial_answer = response.choices[0].message.content.strip()
+        try:
+            from langchain_huggingface import HuggingFaceEmbeddings
+        except ImportError:
+            from langchain_community.embeddings import HuggingFaceEmbeddings
 
-        # Triple validation system - each pass checks progressively stricter
-        validated_answer = initial_answer
-        for iteration in range(1, 4):  # 3 validation passes
-            validated_answer = validate_and_reformat_response(
-                validated_answer,
-                groq_client,
-                iteration
-            )
-            # Small delay between validations for model consistency
-            time.sleep(0.1)
+        from langchain_community.vectorstores import FAISS
+        from pypdf import PdfReader
+    except Exception as exc:
+        return None, str(exc)
 
-        return validated_answer
+    return (
+        {
+            "Document": Document,
+            "Splitter": RecursiveCharacterTextSplitter,
+            "Embeddings": HuggingFaceEmbeddings,
+            "FAISS": FAISS,
+            "PdfReader": PdfReader,
+        },
+        "",
+    )
 
-    except Exception as e:
-        return f"Error generating response: {str(e)}"
 
-def handle_user_input(user_question: str):
-    """Handle user query with metrics tracking"""
-    if st.session_state.vectorstore is None:
-        st.warning("⚠️ Please upload and process documents first!")
+BACKEND, BACKEND_ERROR = rag_backend()
+
+
+@st.cache_resource(show_spinner="Loading the embedding model…")
+def embedder():
+    return BACKEND["Embeddings"](
+        model_name=EMBED_MODEL,
+        model_kwargs={"device": "cpu"},
+        encode_kwargs={"normalize_embeddings": True},
+    )
+
+
+def groq_client(api_key: str):
+    from groq import Groq
+
+    client = Groq(api_key=api_key)
+    client.models.list()  # fail fast on a bad key
+    return client
+
+
+# ---------------------------------------------------------------------------
+# State
+# ---------------------------------------------------------------------------
+
+DEFAULT_METRICS = {"queries": 0, "documents": 0, "chunks": 0, "avg_time": 0.0}
+
+for key, default in (
+    ("history", []),
+    ("vectorstore", None),
+    ("files", []),
+    ("metrics", dict(DEFAULT_METRICS)),
+    ("client", None),
+    ("client_error", ""),
+):
+    st.session_state.setdefault(key, default)
+
+
+def resolve_api_key() -> str:
+    key = os.environ.get("GROQ_API_KEY", "")
+    if key:
+        return key
+    try:
+        return st.secrets["GROQ_API_KEY"]
+    except Exception:
+        return ""
+
+
+def ensure_client(api_key: str) -> None:
+    """Connect once per key. Errors are stored, not raised, so a bad key
+    degrades the page instead of blanking it."""
+    if not api_key:
+        st.session_state.client = None
+        st.session_state.client_error = ""
         return
-    
-    start_time = time.time()
-    
-    with st.spinner("🔍 Retrieving relevant information..."):
-        context, source_docs, k_used = get_relevant_context(
-            user_question, 
-            st.session_state.vectorstore
+    if st.session_state.client is not None and st.session_state.get("key_used") == api_key:
+        return
+    try:
+        st.session_state.client = groq_client(api_key)
+        st.session_state.client_error = ""
+    except Exception as exc:
+        st.session_state.client = None
+        st.session_state.client_error = str(exc)
+    st.session_state["key_used"] = api_key
+
+
+# ---------------------------------------------------------------------------
+# Text handling
+# ---------------------------------------------------------------------------
+
+def clean_extracted(text: str) -> str:
+    text = re.sub(r" +", " ", text)
+    text = re.sub(r"\$(\d+(?:\.\d{2})?)", r"$\1 ", text)
+    text = re.sub(r"([a-zA-Z])(\$\d)", r"\1 \2", text)
+    text = re.sub(r"\n\s*\n+", "\n\n", text)
+    text = "\n".join(line.strip() for line in text.split("\n"))
+    return re.sub(r" +", " ", text).strip()
+
+
+def strip_markdown(text: str) -> str:
+    """Answers are rendered as plain text — the model's markdown emphasis fights
+    the page's own typographic hierarchy."""
+    text = re.sub(r"```.*?```", "", text, flags=re.DOTALL)
+    text = re.sub(r"\*\*(.+?)\*\*", r"\1", text)
+    text = re.sub(r"__(.+?)__", r"\1", text)
+    text = re.sub(r"^(\s*)[-*•]\s+", r"\1• ", text, flags=re.MULTILINE)
+    text = re.sub(r"(?<!\w)\*(.+?)\*(?!\w)", r"\1", text)
+    text = re.sub(r"^#+\s+", "", text, flags=re.MULTILINE)
+    text = re.sub(r"~~(.+?)~~", r"\1", text)
+    text = re.sub(r"`(.+?)`", r"\1", text)
+    text = re.sub(r"(\$\d+(?:\.\d{2})?)([a-zA-Z])", r"\1 \2", text)
+    text = re.sub(r"([a-zA-Z])(\$\d)", r"\1 \2", text)
+    text = re.sub(r"\n{3,}", "\n\n", text)
+    return re.sub(r"[ \t]+", " ", text).strip()
+
+
+DOMAIN_HINTS = (
+    "christmas", "xmas", "gift", "present", "holiday", "santa", "festive",
+    "celebration", "december", "winter", "toy", "decoration", "tree",
+    "wrapping", "seasonal",
+)
+
+
+def looks_on_domain(text: str) -> bool:
+    lowered = text.lower()
+    return any(word in lowered for word in DOMAIN_HINTS)
+
+
+def index_documents(files) -> None:
+    docs = []
+    progress = st.progress(0.0, text="Reading documents…")
+
+    for i, upload in enumerate(files, 1):
+        progress.progress(i / len(files), text=f"Reading {upload.name}…")
+
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
+            tmp.write(upload.getvalue())
+            tmp_path = tmp.name
+        try:
+            reader = BACKEND["PdfReader"](tmp_path)
+            text = clean_extracted(
+                "".join(page.extract_text() or "" for page in reader.pages)
+            )
+        except Exception as exc:
+            st.warning(f"{upload.name}: could not read — {exc}")
+            continue
+        finally:
+            os.unlink(tmp_path)
+
+        if not text:
+            st.warning(f"{upload.name}: no extractable text (is it a scan?).")
+            continue
+        if not looks_on_domain(text):
+            st.info(f"{upload.name}: no gift or seasonal vocabulary found — indexing anyway.")
+
+        splitter = BACKEND["Splitter"](
+            chunk_size=800,
+            chunk_overlap=150,
+            length_function=len,
+            separators=["\n\n", "\n", ". ", " ", ""],
         )
-    
-    with st.spinner("💭 Generating response..."):
-        answer = generate_answer(user_question, context, st.session_state.groq_client)
-    
-    with st.spinner("✓ Triple-validating accuracy and format..."):
-        # Three-stage validation happens inside generate_answer
-        pass
-    
-    response_time = time.time() - start_time
-    
-    # Update metrics
-    st.session_state.metrics['total_queries'] += 1
-    current_avg = st.session_state.metrics['avg_response_time']
-    total_queries = st.session_state.metrics['total_queries']
-    st.session_state.metrics['avg_response_time'] = (
-        (current_avg * (total_queries - 1) + response_time) / total_queries
-    )
-    
-    st.session_state.chat_history.append({
-        'question': user_question,
-        'answer': answer,
-        'sources': source_docs,
-        'response_time': response_time,
-        'k_used': k_used,
-        'timestamp': datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    })
+        docs.extend(
+            BACKEND["Document"](
+                page_content=chunk, metadata={"source": upload.name, "chunk": n}
+            )
+            for n, chunk in enumerate(splitter.split_text(text))
+        )
+        if upload.name not in st.session_state.files:
+            st.session_state.files.append(upload.name)
 
-# APP HEADER
-st.markdown('<div class="app-title">🎁 <span class="gift-text">Gift</span><span class="xai-text">xAI</span></div>', unsafe_allow_html=True)
-st.markdown('<div class="app-subtitle">Smart Gifts, Perfectly Timed.</div>', unsafe_allow_html=True)
+    progress.empty()
 
-# SIDEBAR
-with st.sidebar:
-    st.header("📄 Document Management")
-    
-    uploaded_files = st.file_uploader(
-        "Upload PDF catalogs",
-        type=['pdf'],
-        accept_multiple_files=True,
-        help="Upload one or more PDF documents containing gift information"
+    if not docs:
+        st.error("Nothing indexable in those files.")
+        return
+
+    with st.spinner("Building embeddings…"):
+        embed = embedder()
+        if st.session_state.vectorstore is None:
+            st.session_state.vectorstore = BACKEND["FAISS"].from_documents(docs, embed)
+        else:
+            st.session_state.vectorstore.add_documents(docs)
+
+    st.session_state.metrics["documents"] = len(st.session_state.files)
+    st.session_state.metrics["chunks"] += len(docs)
+    st.success(f"Indexed {len(files)} file(s) into {len(docs)} chunks.")
+
+
+# ---------------------------------------------------------------------------
+# Retrieval + generation
+# ---------------------------------------------------------------------------
+
+BROAD_QUERY_WORDS = (
+    "top", "most", "best", "all", "list", "expensive", "cheapest", "compare",
+    "ranking", "every", "entire", "order", "sorted", "ranked", "highest", "lowest",
+)
+
+
+def retrieve(question: str, store, base_k: int = 8):
+    """Widen the context window for questions that need to see the whole
+    catalogue — a ranking answer built from eight chunks is guesswork."""
+    k = base_k
+    if any(word in question.lower() for word in BROAD_QUERY_WORDS):
+        k = 30
+    match = re.search(r"top\s+(\d+)", question.lower())
+    if match:
+        k = max(40, int(match.group(1)) * 4)
+
+    docs = store.similarity_search(question, k=k)
+
+    seen, unique = set(), []
+    for doc in docs:
+        head = doc.page_content.split("\n", 1)[0][:60]
+        if head not in seen:
+            seen.add(head)
+            unique.append(doc)
+
+    return "\n\n".join(d.page_content for d in unique), unique, k
+
+
+ANSWER_SYSTEM = (
+    "You are a retrieval-grounded answer engine. You answer only from the "
+    "context you are given, never from prior knowledge. You sort numerically "
+    "with care and you return clean plain text."
+)
+
+
+def answer_prompt(question: str, context: str) -> str:
+    return f"""Answer the question using ONLY the retrieved context below.
+
+CONTEXT
+{context}
+
+QUESTION
+{question}
+
+METHOD (work through this internally, do not show it)
+1. Classify the question: ranking, enumeration, comparison, lookup, or explanation.
+2. Extract every relevant item, price and attribute from the context. Do not
+   invent values. If the same item appears twice, keep the fullest entry.
+3. Deduplicate. If the question names a count, return exactly that many items.
+4. If ranking: sort by price descending for "top", "most expensive", "highest";
+   ascending for "cheapest" or "lowest". Never sort alphabetically unless asked.
+   Verify the ordering element by element before writing it out.
+5. Confirm the count and the ordering one final time.
+
+OUTPUT RULES
+- Plain text only. No markdown, no bold, no italics, no headings, no emoji.
+- Numbered lists (1. 2. 3.) for rankings, bullets (•) otherwise.
+- Prices always as $amount, e.g. $649.99.
+- If the context does not support an answer, say so in one sentence.
+- Return the answer only, with no preamble.
+"""
+
+
+def validation_prompt(draft: str, n: int, total: int) -> str:
+    focus = {
+        1: "Extract every item and price; check nothing is missing.",
+        2: "Verify the numerical ordering element by element and re-sort if wrong.",
+        3: "Final sweep on counts, ordering and formatting.",
+    }.get(n, "Verify accuracy, ordering and formatting.")
+
+    return f"""You are validating a draft answer. Pass {n} of {total}. {focus}
+
+DRAFT
+{draft}
+
+Check and correct:
+- Numerical ordering is exactly right (descending for "top"/"expensive",
+  ascending for "cheapest"). Re-sort the whole list if any item is out of place.
+- The item count matches what was asked for, with no duplicates.
+- Prices are formatted consistently as $amount.
+- All markdown is removed: no **, __, *, _, #, backticks.
+- Facts are unchanged. Do not add information that was not in the draft.
+
+Return only the corrected answer. No commentary."""
+
+
+def call_model(client, system: str, user: str) -> str:
+    response = client.chat.completions.create(
+        model=MODEL,
+        messages=[
+            {"role": "system", "content": system},
+            {"role": "user", "content": user},
+        ],
+        temperature=0.01,
+        max_tokens=2500,
+        top_p=0.85,
     )
-    
-    if uploaded_files:
-        if st.button("🚀 Process Documents", type="primary"):
-            st.session_state.vectorstore = process_documents(uploaded_files)
-    
-    if st.session_state.processed_files:
-        st.divider()
-        st.subheader("✅ Indexed Documents")
-        for f in st.session_state.processed_files:
-            st.markdown(f"📎 {f}")
-    
-    st.divider()
-    
-    # System Metrics
-    st.subheader("📊 System Metrics")
-    col1, col2 = st.columns(2)
-    with col1:
-        st.metric("Documents", st.session_state.metrics['total_documents'])
-        st.metric("Queries", st.session_state.metrics['total_queries'])
-    with col2:
-        st.metric("Chunks", st.session_state.metrics['total_chunks'])
-        if st.session_state.metrics['avg_response_time'] > 0:
-            st.metric("Avg Time", f"{st.session_state.metrics['avg_response_time']:.2f}s")
-    
-    st.divider()
-    
-    # Actions
-    if st.button("🗑️ Clear Chat"):
-        st.session_state.chat_history = []
-        st.rerun()
-    
-    if st.button("🔄 Reset System"):
-        st.session_state.chat_history = []
-        st.session_state.vectorstore = None
-        st.session_state.processed_files = []
-        st.session_state.metrics = {
-            'total_queries': 0,
-            'total_documents': 0,
-            'avg_response_time': 0,
-            'total_chunks': 0
+    return response.choices[0].message.content.strip()
+
+
+def generate(question: str, context: str, client, passes: int) -> str:
+    draft = call_model(client, ANSWER_SYSTEM, answer_prompt(question, context))
+
+    for n in range(1, passes + 1):
+        try:
+            draft = call_model(
+                client,
+                f"You are a precision validator, pass {n} of {passes}. You catch "
+                "subtle sorting and counting errors and you never invent facts.",
+                validation_prompt(draft, n, passes),
+            )
+        except Exception:
+            break  # a failed validation pass should not lose the draft
+
+    return strip_markdown(draft)
+
+
+def handle_question(question: str, passes: int) -> None:
+    store = st.session_state.vectorstore
+    client = st.session_state.client
+
+    if store is None:
+        st.warning("Index a catalogue first — upload PDFs in the sidebar.")
+        return
+    if client is None:
+        st.warning("Connect a Groq API key in the sidebar to generate answers.")
+        return
+
+    started = time.time()
+    with st.spinner("Retrieving…"):
+        context, sources, k = retrieve(question, store)
+    label = "Answering…" if not passes else f"Answering, then validating ×{passes}…"
+    with st.spinner(label):
+        answer = generate(question, context, client, passes)
+    elapsed = time.time() - started
+
+    m = st.session_state.metrics
+    m["queries"] += 1
+    m["avg_time"] = (m["avg_time"] * (m["queries"] - 1) + elapsed) / m["queries"]
+
+    st.session_state.history.append(
+        {
+            "question": question,
+            "answer": answer,
+            "sources": sources,
+            "elapsed": elapsed,
+            "k": k,
+            "passes": passes,
+            "at": datetime.now().strftime("%H:%M:%S"),
         }
+    )
+
+
+# ---------------------------------------------------------------------------
+# Sidebar
+# ---------------------------------------------------------------------------
+
+with st.sidebar:
+    st.markdown(
+        '<div class="tk-eyebrow">GiftxAI</div>'
+        '<div style="font-size:1.05rem;font-weight:700;letter-spacing:-.02em;'
+        'margin:.3rem 0 1.2rem;">Grounded Recommendations</div>',
+        unsafe_allow_html=True,
+    )
+
+    env_key = resolve_api_key()
+    if env_key:
+        api_key = env_key
+        st.markdown(
+            theme.badge("Key loaded from environment", "pos", dot=True),
+            unsafe_allow_html=True,
+        )
+    else:
+        api_key = st.text_input(
+            "Groq API key", type="password", placeholder="gsk_…",
+            help="Or set GROQ_API_KEY in your environment / .streamlit/secrets.toml",
+        )
+
+    ensure_client(api_key)
+    if st.session_state.client_error:
+        st.error(f"Groq rejected the key — {st.session_state.client_error}")
+
+    st.markdown("---")
+
+    if BACKEND is None:
+        st.markdown(theme.badge("RAG stack not installed", "warn"), unsafe_allow_html=True)
+        st.caption("`pip install -r requirements.txt` to enable indexing.")
+    else:
+        uploads = st.file_uploader(
+            "Catalogue PDFs", type=["pdf"], accept_multiple_files=True
+        )
+        if uploads and st.button("Index documents", type="primary"):
+            index_documents(uploads)
+
+    if st.session_state.files:
+        st.markdown(
+            '<div class="tk-eyebrow" style="margin:1rem 0 .5rem;">Indexed</div>'
+            + "".join(
+                f'<div style="font-size:.8rem;color:var(--muted);padding:.2rem 0;'
+                f'font-family:var(--mono);">{theme.esc(f)}</div>'
+                for f in st.session_state.files
+            ),
+            unsafe_allow_html=True,
+        )
+
+    st.markdown("---")
+    m = st.session_state.metrics
+    theme.kv_panel(
+        "Session",
+        [
+            ("Documents", str(m["documents"])),
+            ("Chunks", f"{m['chunks']:,}"),
+            ("Queries", str(m["queries"])),
+            ("Avg latency", f"{m['avg_time']:.2f}s" if m["avg_time"] else "—"),
+        ],
+    )
+
+    passes = st.slider(
+        "Validation passes", 0, 3, 2,
+        help="Each pass is an extra model call that re-checks ordering and "
+             "formatting. More passes cost latency; 0 returns the first draft.",
+    )
+
+    c1, c2 = st.columns(2)
+    if c1.button("Clear chat"):
+        st.session_state.history = []
         st.rerun()
-    
-    st.divider()
-    
-    # Technical Info
-    with st.expander("⚙️ System Info"):
-        st.markdown("""
-        **RAG Architecture:**
-        - Embedding: all-MiniLM-L6-v2
-        - Vector Store: FAISS
-        - LLM: Llama 3.3 70B
-        - Chunk Size: 800 tokens
-        - Retrieval: Adaptive (8-40 chunks)
-        - Validation: 3-stage accuracy checking
-        - Sorting: Enhanced numerical ordering
-        """)
+    if c2.button("Reset all"):
+        st.session_state.history = []
+        st.session_state.vectorstore = None
+        st.session_state.files = []
+        st.session_state.metrics = dict(DEFAULT_METRICS)
+        st.rerun()
 
-# CHAT INTERFACE
-for idx, message in enumerate(st.session_state.chat_history):
+
+# ---------------------------------------------------------------------------
+# Page
+# ---------------------------------------------------------------------------
+
+ready = st.session_state.vectorstore is not None and st.session_state.client is not None
+
+theme.hero(
+    "Gift<em>xAI</em>",
+    "Point it at your product catalogues. It retrieves the passages that "
+    "actually answer the question, then validates the ordering and the counts "
+    "before showing you anything.",
+    eyebrow="Retrieval-Augmented Recommendation",
+    meta=[
+        theme.badge("Llama 3.3 70B · Groq", "accent"),
+        theme.badge("FAISS retrieval"),
+        theme.badge(EMBED_MODEL),
+        theme.badge("Ready" if ready else "Awaiting setup", "pos" if ready else "warn", dot=True),
+    ],
+)
+
+if BACKEND is None:
+    st.markdown(
+        f'<div class="tk-panel" style="border-color:var(--accent-line);">'
+        f"<h4>RAG dependencies missing</h4>"
+        f"<p>The interface is running, but indexing and retrieval need the full "
+        f"stack. Install it with <code>pip install -r requirements.txt</code>, "
+        f"then reload.</p>"
+        f'<p style="color:var(--faint);font-size:.8rem;">Import error: '
+        f"{theme.esc(BACKEND_ERROR[:180])}</p></div>",
+        unsafe_allow_html=True,
+    )
+
+for turn in st.session_state.history:
     with st.chat_message("user"):
-        st.write(message['question'])
-    
-    with st.chat_message("assistant"):
-        st.write(message['answer'])
-        
-        # Metadata
-        col1, col2, col3 = st.columns([2, 2, 3])
-        with col1:
-            st.caption(f"⏱️ {message.get('response_time', 0):.2f}s")
-        with col2:
-            st.caption(f"📚 {message.get('k_used', 0)} chunks")
-        with col3:
-            st.caption(f"🕐 {message.get('timestamp', 'N/A')}")
-        
-        # Sources
-        if message.get('sources'):
-            with st.expander("📚 View Retrieved Sources"):
-                for j, doc in enumerate(message['sources'][:3]):
-                    st.markdown(f"**Source {j+1}** - {doc.metadata.get('source','Unknown')}")
-                    st.text(doc.page_content[:300]+"...")
-                    st.divider()
+        st.markdown(f"**{turn['question']}**")
 
-user_question = st.chat_input("Ask about gifts, pricing, recommendations, or comparisons...")
-if user_question:
-    handle_user_input(user_question)
+    with st.chat_message("assistant"):
+        st.text(turn["answer"])
+
+        st.markdown(
+            '<div style="display:flex;gap:.4rem;flex-wrap:wrap;margin-top:.8rem;">'
+            + theme.badge(f"{turn['elapsed']:.2f}s")
+            + theme.badge(f"{turn['k']} chunks retrieved")
+            + theme.badge(
+                f"{turn['passes']} validation pass{'es' if turn['passes'] != 1 else ''}"
+            )
+            + theme.badge(turn["at"])
+            + "</div>",
+            unsafe_allow_html=True,
+        )
+
+        if turn["sources"]:
+            with st.expander(f"Retrieved context · {len(turn['sources'])} chunks"):
+                for n, doc in enumerate(turn["sources"][:5], 1):
+                    st.markdown(
+                        f'<div class="tk-eyebrow">Chunk {n} · '
+                        f'{theme.esc(doc.metadata.get("source", "unknown"))}</div>',
+                        unsafe_allow_html=True,
+                    )
+                    st.text(doc.page_content[:400] + "…")
+
+if not st.session_state.history:
+    steps = [
+        ("01", "Connect", "Add a Groq API key in the sidebar, or set GROQ_API_KEY in your environment."),
+        ("02", "Index", "Upload one or more PDF catalogues. Text is chunked at 800 characters with 150 of overlap and embedded into FAISS."),
+        ("03", "Ask", "Questions widen the retrieval window automatically — a 'top 10' pulls forty chunks, a lookup pulls eight."),
+        ("04", "Verify", "Every answer ships with the chunks it was built from. Open them and check."),
+    ]
+    st.markdown(
+        '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));'
+        'gap:1px;background:var(--line);border:1px solid var(--line);border-radius:10px;'
+        'overflow:hidden;margin-top:1.5rem;">'
+        + "".join(
+            f'<div style="background:var(--surface);padding:1.3rem 1.35rem;">'
+            f'<div class="mono" style="color:var(--accent);font-size:.8rem;'
+            f'font-weight:600;">{n}</div>'
+            f'<div style="font-weight:650;margin:.5rem 0 .4rem;font-size:.98rem;">{t}</div>'
+            f'<div style="color:var(--muted);font-size:.85rem;line-height:1.6;">{d}</div>'
+            f"</div>"
+            for n, t, d in steps
+        )
+        + "</div>",
+        unsafe_allow_html=True,
+    )
+
+    theme.section("Try asking")
+    st.markdown(
+        '<div style="display:flex;gap:.4rem;flex-wrap:wrap;">'
+        + "".join(
+            theme.badge(q)
+            for q in (
+                "What are the top 10 most expensive gifts?",
+                "Cheapest options under $50",
+                "Compare the gift sets by price",
+                "What is included in the premium bundle?",
+            )
+        )
+        + "</div>",
+        unsafe_allow_html=True,
+    )
+
+question = st.chat_input("Ask about gifts, pricing, comparisons…")
+if question:
+    handle_question(question, passes)
     st.rerun()
 
-# INFO SECTION
-if not st.session_state.chat_history:
-    st.markdown(
-        """
-        <div class="tips-box">
-        <strong>🎯 Enhanced Enterprise RAG System Features</strong><br><br>
-        ✅ Intelligent document indexing & retrieval<br>
-        ✅ Adaptive context window (8-40 chunks)<br>
-        ✅ Triple validation for maximum accuracy<br>
-        ✅ Real-time performance metrics<br>
-        </div>
-        """,
-        unsafe_allow_html=True
-    )
-
+theme.footer(
+    "<b>GiftxAI</b> · Retrieval-augmented gift recommendation",
+    "FAISS · Llama 3.3 70B on Groq · Streamlit",
+)

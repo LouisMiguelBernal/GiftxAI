@@ -1,16 +1,24 @@
-# Ignore Streamlit secrets
+# --- Secrets: never commit ---
 .streamlit/secrets.toml
-
-# Python caches
-__pycache__/
-*.pyc
-*.pyo
-*.pyd
-
-# Virtual environment
-venv/
 .env
+.env.*
+!.env.example
 
-# OS files
+# --- Python ---
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+env/
+.ipynb_checkpoints/
+.pytest_cache/
+
+# --- Model / index caches ---
+.cache/
+faiss_index/
+
+# --- OS / editors ---
 .DS_Store
 Thumbs.db
+.vscode/
+.idea/
