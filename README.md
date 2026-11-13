@@ -1,81 +1,61 @@
 # GiftxAI
 
-Retrieval-augmented gift recommendation over your own PDF catalogues. FAISS
-retrieval, a grounded answer pass, and optional validation passes on a
-Groq-hosted Llama 3.3 70B.
+Retrieval-augmented gift recommendation over your own catalogues. PDFs are parsed and
+embedded in the browser, Llama 3.3 70B on Groq drafts the answer and up to three passes
+validate it, and every price in the answer is checked against the retrieved text.
+
+Version 2 is a Next.js app that deploys to Vercel as-is: no Python server, no vector
+database, and the catalogues never leave the visitor's machine. Only the retrieved
+passages are sent to the model.
 
 ---
 
 ## Run it locally
 
-Double-click `run.bat`, or from a terminal in the project folder:
-
 ```bash
-run.bat
+npm install
+npm run dev        # http://localhost:3210
 ```
 
-First run creates a virtual environment and installs the retrieval stack —
-PyTorch and sentence-transformers make this a large download, so expect several
-minutes. Then it opens at **http://localhost:8503**.
+Click **Try it with a sample catalogue** to load a fictional 35-product catalogue
+(`public/sample/`), or drop your own PDFs.
 
-Just want to look at the interface? This installs Streamlit only and skips the
-~2 GB of ML dependencies:
-
-```bash
-run.bat ui
-```
-
-The app runs either way. Without the retrieval stack it renders in full and tells
-you what is missing instead of crashing.
-
-With the full stack the **first page load takes about 40 seconds** — importing
-LangChain and PyTorch is slow, and it is cached from then on. The first time you
-index anything, the embedding model downloads (~90 MB).
-
-Prefer to drive it yourself:
-
-```bash
-python -m venv .venv && .venv\Scripts\activate && pip install -r requirements.txt && streamlit run app.py
-```
+Tests: `npm test` · types: `npm run typecheck` · production: `npm run build && npm start`.
 
 ---
 
 ## Configuration
 
-Answer generation needs a [Groq API key](https://console.groq.com/keys) (free tier
-is enough). Either set it before launching:
+Generation needs a [Groq API key](https://console.groq.com/keys) (the free tier is enough).
 
-```bash
-set GROQ_API_KEY=gsk_your_key_here
-```
-
-…or paste it into the sidebar at runtime. It is never written to disk. You can
-also put it in `.streamlit/secrets.toml`, which is gitignored.
-
-Retrieval and indexing work without a key — only the generation step needs one.
+| Option | How |
+|---|---|
+| Server key (demo for every visitor) | Set `GROQ_API_KEY` in `.env.local` or in Vercel project settings. Template: `config/env.template`. Limited to 20 questions per 10 minutes per IP. |
+| Visitor's own key | Paste it under **Generation**. Kept in that browser tab only (sessionStorage) and forwarded to Groq by the API route; not limited. |
+| No key | Retrieval still works and shows the passages it found. |
 
 ---
 
 ## How it works
 
-1. **Index.** Uploaded PDFs are read with `pypdf`, cleaned, and split at 800
-   characters with 150 of overlap. Chunks are embedded with `all-MiniLM-L6-v2`
-   and stored in FAISS.
+1. **Index.** pdf.js extracts text and rebuilds lines by position so names stay next to
+   their prices. Text is cleaned and split at 800 characters with 150 of overlap.
+   Chunks are embedded with `all-MiniLM-L6-v2` through transformers.js, in the browser.
+   Until the model has downloaded (or if it cannot load), retrieval falls back to BM25.
 
-2. **Retrieve.** The retrieval window adapts to the question. A lookup pulls 8
-   chunks; anything containing ranking language ("top", "cheapest", "compare")
-   pulls 30; an explicit *top N* pulls `max(40, N × 4)`, because a ranked answer
-   assembled from 8 chunks is guesswork. Near-duplicate chunks are dropped.
+2. **Retrieve.** The window adapts to the question: a lookup pulls 8 chunks, ranking
+   language ("top", "cheapest", "compare") pulls 30, and an explicit *top N* pulls
+   `max(40, N × 4)`. Near-duplicate chunks are dropped.
 
-3. **Answer.** One grounded pass at temperature 0.01, instructed to use only the
-   retrieved context and to sort numerically with care.
+3. **Answer.** One grounded pass at temperature 0.01, told to use only the context and to
+   sort numerically with care.
 
-4. **Validate.** Up to three further passes re-check ordering, counts, and
-   formatting. Each costs a round-trip, so the count is a slider — 0 returns the
-   first draft, 2 is the default. A failed validation pass keeps the previous
-   draft rather than losing the answer.
+4. **Validate.** Up to three more passes, each given the context again, remove anything
+   not in it and re-check ordering and counts. A failed pass keeps the previous draft.
 
-Every answer ships with the chunks it was built from. Open the expander and check.
+5. **Verify.** A deterministic check matches every `$` amount in the answer against the
+   retrieved text and flags any that are missing. The chunks behind each answer are one
+   click away.
 
 ---
 
@@ -83,23 +63,20 @@ Every answer ships with the chunks it was built from. Open the expander and chec
 
 ```
 GiftxAI/
-├── .streamlit/config.toml   Base theme
-├── app.py                   The application
-├── theme.py                 Shared design system
-├── requirements.txt
-└── run.bat                  One-command local launch
+├── public/sample/                     Fictional sample catalogue (PDF)
+├── scripts/make_sample_catalogue.py   Regenerates it (reportlab)
+├── src/app/api/answer/route.ts        Groq draft + validation passes + grounding
+├── src/components/App.tsx             Catalogue panel and chat
+├── src/lib/browser.ts                 pdf.js and transformers.js loaders
+├── src/lib/retrieve.ts                Window sizing, cosine search, BM25
+├── src/lib/text.ts                    Cleaning, splitter, markdown strip, price grounding
+└── src/lib/prompts.ts                 Answer and validator prompts
 ```
-
-`theme.py` is shared verbatim with [QuantMaven](https://github.com/LouisMiguelBernal/QuantMaven)
-and [DeepSP](https://github.com/LouisMiguelBernal/DeepSP) — one visual language,
-one accent hue per project.
 
 ---
 
 ## Notes
 
-The domain check is advisory: a catalogue with no gift or seasonal vocabulary
-gets flagged and indexed anyway, rather than being rejected.
-
-Scanned PDFs with no embedded text layer will index as empty. Run OCR over them
-first.
+- pdf.js 4.10.38 and transformers.js 3.8.1 load from jsDelivr at runtime, pinned.
+- Scanned PDFs with no text layer index as empty. Run OCR first.
+- The gift-vocabulary check is advisory: other catalogues are flagged and indexed anyway.
