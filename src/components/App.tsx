@@ -168,9 +168,9 @@ export default function App() {
       <header className="top">
         <div className="brand">
           <span className="logo" aria-hidden>
-            <svg viewBox="0 0 32 32" width="28" height="28"><rect x="4" y="12" width="24" height="16" rx="3" fill="currentColor" opacity=".9"/><rect x="2" y="8" width="28" height="6" rx="2" fill="currentColor"/><rect x="14.5" y="8" width="3" height="20" fill="#0D0B0A"/><path d="M16 8c-3-6-9-5-8-1 1 3 8 1 8 1zm0 0c3-6 9-5 8-1-1 3-8 1-8 1z" fill="none" stroke="currentColor" strokeWidth="2"/></svg>
+            <Mark size={30} />
           </span>
-          <span className="wordmark">Gift<em>xAI</em></span>
+          <span className="wordmark">Gift<em>x</em>AI</span>
         </div>
         <div className="status">
           <span className={'pill ' + (chunks.length ? 'ok' : '')}><i />{chunks.length ? `${chunks.length} chunks` : 'No catalogue'}</span>
@@ -256,7 +256,7 @@ export default function App() {
           {history.length === 0 ? (
             <div className="intro">
               <div className="eyebrow">Retrieval-augmented recommendation</div>
-              <h1>Gift<em>xAI</em></h1>
+              <h1>Gift<em>x</em>AI</h1>
               <p className="lede">
                 Point it at your product catalogues. It retrieves the passages that actually answer the question,
                 drafts with Llama 3.3 70B, then validates facts, ordering and counts before showing you anything.
@@ -305,6 +305,21 @@ export default function App() {
         </main>
       </div>
     </div>
+  )
+}
+
+/** The GiftxAI mark from 1nonly.me: a gift box from above, ribbons crossing as an "x", knot at the center. */
+function Mark({ size = 30 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 48 48" fill="none">
+      <defs><clipPath id="gx-box"><rect x="7" y="7" width="34" height="34" rx="9" /></clipPath></defs>
+      <rect x="7" y="7" width="34" height="34" rx="9" stroke="currentColor" strokeWidth="3" />
+      <g clipPath="url(#gx-box)" stroke="var(--accent)" strokeWidth="5" strokeLinecap="round">
+        <path d="M7 7 L41 41" />
+        <path d="M41 7 L7 41" />
+      </g>
+      <rect x="19.5" y="19.5" width="9" height="9" rx="2.5" transform="rotate(45 24 24)" fill="var(--bg)" stroke="var(--accent)" strokeWidth="2.6" />
+    </svg>
   )
 }
 
