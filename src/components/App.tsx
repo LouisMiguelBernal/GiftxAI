@@ -308,17 +308,19 @@ export default function App() {
   )
 }
 
-/** The GiftxAI mark from 1nonly.me: a gift box from above, ribbons crossing as an "x", knot at the center. */
+/** The GiftxAI mark (1nonly.me public/brand/giftxai.svg): violet-to-pink tile, ribbon "x", bow, peach spark. */
 function Mark({ size = 30 }: { size?: number }) {
   return (
-    <svg width={size} height={size} viewBox="0 0 48 48" fill="none">
-      <defs><clipPath id="gx-box"><rect x="7" y="7" width="34" height="34" rx="9" /></clipPath></defs>
-      <rect x="7" y="7" width="34" height="34" rx="9" stroke="currentColor" strokeWidth="3" />
-      <g clipPath="url(#gx-box)" stroke="var(--accent)" strokeWidth="5" strokeLinecap="round">
-        <path d="M7 7 L41 41" />
-        <path d="M41 7 L7 41" />
-      </g>
-      <rect x="19.5" y="19.5" width="9" height="9" rx="2.5" transform="rotate(45 24 24)" fill="var(--bg)" stroke="var(--accent)" strokeWidth="2.6" />
+    <svg width={size} height={size} viewBox="0 0 96 96" fill="none">
+      <defs>
+        <linearGradient id="gx-g" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0" stopColor="#7C3AED" /><stop offset="0.6" stopColor="#C026D3" /><stop offset="1" stopColor="#EC4899" />
+        </linearGradient>
+      </defs>
+      <rect x="4" y="4" width="88" height="88" rx="28" fill="url(#gx-g)" />
+      <path d="M30 30 L66 66 M66 30 L30 66" stroke="#FFFFFF" strokeWidth="9" strokeLinecap="round" />
+      <path d="M48 48 C40 32 24 34 28 44 C31 51 42 50 48 48 C54 50 65 51 68 44 C72 34 56 32 48 48 Z" stroke="#FFFFFF" strokeWidth="4" strokeLinejoin="round" transform="translate(0 -18)" />
+      <path d="M72 66 l2.4 5.6 5.6 2.4 -5.6 2.4 -2.4 5.6 -2.4 -5.6 -5.6 -2.4 5.6 -2.4 z" fill="#FDBA74" />
     </svg>
   )
 }

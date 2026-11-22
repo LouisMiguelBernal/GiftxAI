@@ -12,7 +12,7 @@ export const metadata: Metadata = {
     'Retrieval-augmented gift recommendation: PDFs are parsed and embedded in the browser, Llama 3.3 70B on Groq drafts and validates, and every price is checked against the sources.',
 }
 
-export const viewport: Viewport = { themeColor: '#FBFAFF', width: 'device-width', initialScale: 1 }
+export const viewport: Viewport = { themeColor: '#F7F4FF', width: 'device-width', initialScale: 1 }
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (

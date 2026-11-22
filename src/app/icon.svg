@@ -1,1 +1,12 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" fill="none"><defs><clipPath id="b"><rect x="7" y="7" width="34" height="34" rx="9"/></clipPath></defs><rect width="48" height="48" rx="11" fill="#FBFAFF"/><rect x="7" y="7" width="34" height="34" rx="9" stroke="#1C1430" stroke-width="3"/><g clip-path="url(#b)" stroke="#7C3AED" stroke-width="5" stroke-linecap="round"><path d="M7 7 41 41"/><path d="M41 7 7 41"/></g><rect x="19.5" y="19.5" width="9" height="9" rx="2.5" transform="rotate(45 24 24)" fill="#FBFAFF" stroke="#7C3AED" stroke-width="2.6"/></svg>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96" role="img" aria-label="GiftxAI">
+  <title>GiftxAI</title>
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#7C3AED"/><stop offset="0.6" stop-color="#C026D3"/><stop offset="1" stop-color="#EC4899"/>
+    </linearGradient>
+  </defs>
+  <rect x="4" y="4" width="88" height="88" rx="28" fill="url(#g)"/>
+  <path d="M30 30 L66 66 M66 30 L30 66" stroke="#FFFFFF" stroke-width="9" stroke-linecap="round"/>
+  <path d="M48 48 C40 32 24 34 28 44 C31 51 42 50 48 48 C54 50 65 51 68 44 C72 34 56 32 48 48 Z" fill="none" stroke="#FFFFFF" stroke-width="4" stroke-linejoin="round" transform="translate(0 -18)"/>
+  <path d="M72 66 l2.4 5.6 5.6 2.4 -5.6 2.4 -2.4 5.6 -2.4 -5.6 -5.6 -2.4 5.6 -2.4 z" fill="#FDBA74"/>
+</svg>
